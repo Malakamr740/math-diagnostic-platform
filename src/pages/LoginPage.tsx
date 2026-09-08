@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 
 const loginSchema = z.object({
@@ -13,6 +14,7 @@ type LoginFormData = z.infer<typeof loginSchema>
 
 export default function LoginPage() {
   const { signIn } = useAuth()
+  const navigate = useNavigate()
   const [serverError, setServerError] = useState<string | null>(null)
 
   const {
@@ -28,10 +30,9 @@ export default function LoginPage() {
     const { error } = await signIn(data.email, data.password)
     if (error) {
       setServerError(error)
+    } else {
+      navigate('/admin')
     }
-    // On success, AuthContext's onAuthStateChange listener updates
-    // automatically — no manual redirect needed here yet (we'll add
-    // routing logic once React Router is wired in, in the next step).
   }
 
   return (
