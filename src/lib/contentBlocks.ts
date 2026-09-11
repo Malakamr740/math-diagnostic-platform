@@ -1,72 +1,162 @@
-// The canonical definition of a content block — used everywhere
-// a question's content is stored, edited, or rendered.
-export type ContentBlock =
-  | { type: 'text'; value: string }
-  | { type: 'math'; latex: string }
-  | { type: 'image'; url: string; alt?: string; caption?: string }
-  | { type: 'table'; rows: string[][] }  // each cell is raw text that may contain $...$ math
-  | { type: 'break' }
+export interface TextBlock {
+  type: 'text'
+  value: string
+}
 
-// Turns raw typed text like:
-//   "If $x = 3$, then:\nthe perimeter is $2x + 4$."
-// into structured blocks:
-//   [text, math, text, break, text, math, text]
-//
-// Note: this does NOT handle images — images are inserted as a
-// separate explicit action (a file isn't typeable text), so they're
-// added on top of these parsed blocks, not through this function.
-export function parseContentText(text: string): ContentBlock[] {
+export interface MathBlock {
+  type: 'math'
+  latex: string
+}
+
+export interface ImageBlock {
+  type: 'image'
+  url: string
+  alt?: string
+  caption?: string
+}
+
+export interface TableBlock {
+  type: 'table'
+  rows: string[][]
+}
+
+export interface BreakBlock {
+  type: 'break'
+}
+
+export type ContentBlock = TextBlock | MathBlock | ImageBlock | TableBlock | BreakBlock
+
+export type EditorItem =
+  | { id: string; kind: 'text'; text: string }
+  | { id: string; kind: 'image'; url: string; caption?: string }
+  | { id: string; kind: 'table'; rows: string[][] }
+
+export type TextEditorItem = Extract<EditorItem, { kind: 'text' }>
+
+/**
+ * Parses inline math delimited by $...$ within a single string into ContentBlock[]
+ */
+export function parseContentText(input: string): ContentBlock[] {
+  if (!input) return []
   const blocks: ContentBlock[] = []
-  const mathRegex = /\$(.*?)\$/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null
+  const parts = input.split(/(\$[^$]+\$)/g)
 
-  function pushTextSegment(segment: string) {
-    const lines = segment.split('\n')
-    lines.forEach((line, i) => {
-      if (line.length > 0) blocks.push({ type: 'text', value: line })
-      if (i < lines.length - 1) blocks.push({ type: 'break' })
-    })
+  for (const part of parts) {
+    if (!part) continue
+    if (part.startsWith('$') && part.endsWith('$') && part.length > 2) {
+      blocks.push({
+        type: 'math',
+        latex: part.slice(1, -1).trim(),
+      })
+    } else {
+      // Split on newlines inside plain text to insert breaks
+      const lines = part.split('\n')
+      lines.forEach((line, index) => {
+        if (line) blocks.push({ type: 'text', value: line })
+        if (index < lines.length - 1) blocks.push({ type: 'break' })
+      })
+    }
   }
-
-  while ((match = mathRegex.exec(text)) !== null) {
-    pushTextSegment(text.slice(lastIndex, match.index))
-    blocks.push({ type: 'math', latex: match[1] })
-    lastIndex = mathRegex.lastIndex
-  }
-  pushTextSegment(text.slice(lastIndex))
 
   return blocks
 }
 
-// The reverse operation: turns stored blocks back into editable text.
-// Needed so the Edit Question page can pre-fill the textarea with
-// existing content in the same $...$ format the teacher typed originally.
-export function blocksToText(blocks: ContentBlock[]): string {
-  let result = ''
-  for (const block of blocks) {
-    if (block.type === 'text') result += block.value
-    else if (block.type === 'math') result += `$${block.latex}$`
-    else if (block.type === 'break') result += '\n'
-    // image blocks are intentionally skipped here — they're not
-    // representable as plain typed text, and are managed separately.
-  }
-  return result
+/**
+ * Parses multi-line choices text (one choice per line, with math wrapped in $...$)
+ */
+export function parseChoicesText(raw: string): ContentBlock[][] {
+  const lines = raw.split('\n').filter((l) => l.trim().length > 0)
+  return lines.map((line) => parseContentText(line.trim()))
 }
 
-// Splits multi-line choice text into one ContentBlock[] per line.
-// Each line becomes one choice's content (blank lines are ignored,
-// so extra Enter presses don't create empty choices).
-export function parseChoicesText(text: string): ContentBlock[][] {
-  return text
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .map((line) => parseContentText(line))
-}
-
-// The reverse: turns an array of choices' blocks back into one
-// multi-line string, for pre-filling the textarea when editing.
+/**
+ * Converts choice content blocks back into editor text (one choice per line)
+ */
 export function choicesToText(choiceBlocks: ContentBlock[][]): string {
-  return choiceBlocks.map((blocks) => blocksToText(blocks)).join('\n')
+  return choiceBlocks
+    .map((blocks) =>
+      blocks
+        .map((b) => {
+          if (b.type === 'text') return b.value
+          if (b.type === 'math') return `$${b.latex}$`
+          return ''
+        })
+        .join('')
+    )
+    .join('\n')
+}
+
+/**
+ * Converts database content blocks to editor items
+ */
+export function blocksToEditorItems(blocks: ContentBlock[]): EditorItem[] {
+  if (!blocks || blocks.length === 0) {
+    return [{ id: crypto.randomUUID(), kind: 'text', text: '' }]
+  }
+
+  const items: EditorItem[] = []
+  let textBuffer = ''
+
+  for (const block of blocks) {
+    if (block.type === 'text') {
+      textBuffer += block.value
+    } else if (block.type === 'math') {
+      textBuffer += `$${block.latex}$`
+    } else if (block.type === 'break') {
+      textBuffer += '\n'
+    } else if (block.type === 'image') {
+      if (textBuffer) {
+        items.push({ id: crypto.randomUUID(), kind: 'text', text: textBuffer })
+        textBuffer = ''
+      }
+      items.push({
+        id: crypto.randomUUID(),
+        kind: 'image',
+        url: block.url,
+        caption: block.caption,
+      })
+    } else if (block.type === 'table') {
+      if (textBuffer) {
+        items.push({ id: crypto.randomUUID(), kind: 'text', text: textBuffer })
+        textBuffer = ''
+      }
+      items.push({
+        id: crypto.randomUUID(),
+        kind: 'table',
+        rows: block.rows,
+      })
+    }
+  }
+
+  if (textBuffer) {
+    items.push({ id: crypto.randomUUID(), kind: 'text', text: textBuffer })
+  }
+
+  return items.length > 0 ? items : [{ id: crypto.randomUUID(), kind: 'text', text: '' }]
+}
+
+/**
+ * Converts editor items back to structured ContentBlock[]
+ */
+export function editorItemsToBlocks(items: EditorItem[]): ContentBlock[] {
+  const result: ContentBlock[] = []
+
+  for (const item of items) {
+    if (item.kind === 'text') {
+      result.push(...parseContentText(item.text))
+    } else if (item.kind === 'image') {
+      result.push({
+        type: 'image',
+        url: item.url,
+        caption: item.caption,
+      })
+    } else if (item.kind === 'table') {
+      result.push({
+        type: 'table',
+        rows: item.rows,
+      })
+    }
+  }
+
+  return result
 }

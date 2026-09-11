@@ -2,7 +2,13 @@ import { useRef, useState, useEffect } from 'react'
 import ContentBlockRenderer from './ContentBlockRenderer'
 import ImageUploadButton from './ImageUploadButton'
 import TableBlockEditor from './TableBlockEditor'
-import { parseContentText, blocksToText, type ContentBlock } from '../lib/contentBlocks'
+import {
+  type ContentBlock,
+  type EditorItem,
+  type TextEditorItem,
+  blocksToEditorItems,
+  editorItemsToBlocks,
+} from '../lib/contentBlocks'
 
 interface ContentTextEditorProps {
   initialBlocks?: ContentBlock[]
@@ -15,54 +21,28 @@ export default function ContentTextEditor({
   onChange,
   placeholder,
 }: ContentTextEditorProps) {
-  // Split initial blocks into "typed text" (text/math/break) and
-  // "attached media" (image/table) — they're edited differently,
-  // so we track them as two separate pieces of state.
-  const initialTyped = (initialBlocks ?? []).filter(
-    (b) => b.type === 'text' || b.type === 'math' || b.type === 'break'
-  )
-  const initialMedia = (initialBlocks ?? []).filter(
-    (b) => b.type === 'image' || b.type === 'table'
-  ) as Extract<ContentBlock, { type: 'image' | 'table' }>[]
-
-  const [text, setText] = useState(() => blocksToText(initialTyped))
-  const [mediaBlocks, setMediaBlocks] = useState<Extract<ContentBlock, { type: 'image' | 'table' }>[]>(
-    initialMedia
-  )
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const [items, setItems] = useState<EditorItem[]>(() => blocksToEditorItems(initialBlocks ?? []))
+  const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
 
   useEffect(() => {
-    // Final saved order: typed content first, then any attached
-    // images/tables. Simple and predictable for a first version —
-    // precise drag-to-reorder between text and media can come later
-    // if teachers need it.
-    onChange([...parseContentText(text), ...mediaBlocks])
+    onChange(editorItemsToBlocks(items))
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, mediaBlocks])
+  }, [items])
 
-  function insertMathMarkers() {
-    const el = textareaRef.current
-    if (!el) return
-    const start = el.selectionStart
-    const end = el.selectionEnd
-    const before = text.slice(0, start)
-    const after = text.slice(end)
-    setText(`${before}$$${after}`)
-    requestAnimationFrame(() => {
-      el.focus()
-      el.setSelectionRange(start + 1, start + 1)
-    })
+  function addTextItem() {
+    setItems([...items, { id: crypto.randomUUID(), kind: 'text', text: '' }])
   }
 
-  function handleImageUploaded(url: string) {
-    setMediaBlocks([...mediaBlocks, { type: 'image', url }])
+  function addImageItem(url: string) {
+    setItems([...items, { id: crypto.randomUUID(), kind: 'image', url }])
   }
 
-  function addTable() {
-    setMediaBlocks([
-      ...mediaBlocks,
+  function addTableItem() {
+    setItems([
+      ...items,
       {
-        type: 'table',
+        id: crypto.randomUUID(),
+        kind: 'table',
         rows: [
           ['', ''],
           ['', ''],
@@ -71,101 +51,147 @@ export default function ContentTextEditor({
     ])
   }
 
-  function updateMediaBlock(
-    index: number,
-    updated: Extract<ContentBlock, { type: 'image' | 'table' }>
-  ) {
-    setMediaBlocks((prev) => prev.map((b, i) => (i === index ? updated : b)))
+  function updateItem(id: string, updated: EditorItem) {
+    setItems(items.map((item) => (item.id === id ? updated : item)))
   }
 
-    function removeMediaBlock(index: number) {
-      setMediaBlocks(mediaBlocks.filter((_, i) => i !== index))
-    }
+  function removeItem(id: string) {
+    setItems(items.filter((item) => item.id !== id))
+  }
 
-  const previewBlocks = [...parseContentText(text), ...mediaBlocks]
+  function moveItem(index: number, direction: -1 | 1) {
+    const newIndex = index + direction
+    if (newIndex < 0 || newIndex >= items.length) return
+    const next = [...items]
+    ;[next[index], next[newIndex]] = [next[newIndex], next[index]]
+    setItems(next)
+  }
+
+  function insertMathMarkers(item: TextEditorItem) {
+    const el = textareaRefs.current[item.id]
+    if (!el) return
+    const start = el.selectionStart
+    const end = el.selectionEnd
+    const before = item.text.slice(0, start)
+    const after = item.text.slice(end)
+    updateItem(item.id, { ...item, text: `${before}$$${after}` })
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(start + 1, start + 1)
+    })
+  }
+
+  const previewBlocks = editorItemsToBlocks(items)
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2 items-start">
-        <textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={placeholder ?? 'Type your question. Wrap math in $ $, e.g. If $x = 3$, then...'}
-          rows={4}
-          className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-slate-900 font-mono text-sm resize-y"
-        />
-        <button
-          type="button"
-          onClick={insertMathMarkers}
-          title="Insert math markers at cursor"
-          className="text-sm bg-purple-100 text-purple-700 px-3 py-2 rounded-md hover:bg-purple-200 whitespace-nowrap"
+      {items.map((item, index) => (
+        <div
+          key={item.id}
+          className="flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-md p-3"
         >
-          √ Insert Math
-        </button>
-      </div>
+          <div className="flex flex-col gap-1 pt-1">
+            <button
+              type="button"
+              onClick={() => moveItem(index, -1)}
+              disabled={index === 0}
+              className="text-xs px-1.5 rounded bg-slate-200 hover:bg-slate-300 disabled:opacity-30"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              onClick={() => moveItem(index, 1)}
+              disabled={index === items.length - 1}
+              className="text-xs px-1.5 rounded bg-slate-200 hover:bg-slate-300 disabled:opacity-30"
+            >
+              ↓
+            </button>
+          </div>
 
-      <p className="text-xs text-slate-400">
-        Wrap math in <code className="bg-slate-100 px-1 rounded">$...$</code> — e.g.{' '}
-        <code className="bg-slate-100 px-1 rounded">{'$\\sqrt{x+3}$'}</code>. Press Enter for a new
-        line.
-      </p>
+          <div className="flex-1">
+            <p className="text-xs font-medium text-slate-400 uppercase mb-1">{item.kind}</p>
 
-      {/* Attached media: images, figures, and tables */}
-      <div className="space-y-3 border-t border-slate-200 pt-3">
-        <p className="text-xs font-medium text-slate-500 uppercase">
-          Images, Figures &amp; Tables
-        </p>
-        <p className="text-xs text-slate-400 -mt-2">
-          Upload an image below. Leave its caption blank for a plain image, or add a caption to
-          display it as a labeled figure.
-        </p>
+            {item.kind === 'text' && (
+              <div className="flex gap-2">
+                <textarea
+                  ref={(el) => {
+                    textareaRefs.current[item.id] = el
+                  }}
+                  value={item.text}
+                  onChange={(e) => updateItem(item.id, { ...item, text: e.target.value })}
+                  placeholder={placeholder ?? 'Type text. Wrap math in $ $, e.g. If $x=3$...'}
+                  rows={3}
+                  className="flex-1 rounded-md border border-slate-300 px-3 py-2 text-slate-900 font-mono text-sm resize-y"
+                />
+                <button
+                  type="button"
+                  onClick={() => insertMathMarkers(item)}
+                  title="Insert math markers at cursor"
+                  className="text-sm bg-purple-100 text-purple-700 px-3 py-2 rounded-md hover:bg-purple-200 whitespace-nowrap h-fit"
+                >
+                  √ Insert Math
+                </button>
+              </div>
+            )}
 
-        {mediaBlocks.map((block, index) => (
-          <div key={index} className="bg-slate-50 border border-slate-200 rounded-md p-3">
-            {block.type === 'image' && (
+            {item.kind === 'image' && (
               <div className="space-y-2">
-                <img src={block.url} alt="" className="max-h-40 rounded-md" />
+                <img src={item.url} alt="" className="max-h-40 rounded-md" />
                 <input
                   type="text"
-                  value={block.caption ?? ''}
-                  onChange={(e) => updateMediaBlock(index, { ...block, caption: e.target.value })}
-                  placeholder="Caption (optional — leave blank for a plain image, fill in to display as a figure)"
+                  value={item.caption ?? ''}
+                  onChange={(e) => updateItem(item.id, { ...item, caption: e.target.value })}
+                  placeholder="Caption (optional — blank for a plain image, filled in for a labeled figure)"
                   className="w-full rounded-md border border-slate-300 px-3 py-1.5 text-sm"
                 />
               </div>
             )}
-            {block.type === 'table' && (
+
+            {item.kind === 'table' && (
               <TableBlockEditor
-                rows={block.rows}
-                onChange={(rows) => updateMediaBlock(index, { ...block, rows })}
+                rows={item.rows}
+                onChange={(rows) => updateItem(item.id, { ...item, rows })}
               />
             )}
-            <button
-              type="button"
-              onClick={() => removeMediaBlock(index)}
-              className="text-xs text-red-600 hover:underline mt-2"
-            >
-              Remove this {block.type}
-            </button>
           </div>
-        ))}
 
-        <div className="flex gap-2">
-          <ImageUploadButton onUploaded={handleImageUploaded} />
           <button
             type="button"
-            onClick={addTable}
-            className="text-sm bg-slate-200 text-slate-800 px-3 py-1.5 rounded-md hover:bg-slate-300 h-fit"
+            onClick={() => removeItem(item.id)}
+            className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 hover:bg-red-200 mt-1"
           >
-            + Add Table
+            ✕
           </button>
         </div>
+      ))}
+
+      <div className="flex flex-wrap gap-2 pt-1 items-center">
+        <button
+          type="button"
+          onClick={addTextItem}
+          className="text-sm bg-slate-200 text-slate-800 px-3 py-1.5 rounded-md hover:bg-slate-300"
+        >
+          + Add Text
+        </button>
+        <ImageUploadButton onUploaded={addImageItem} />
+        <button
+          type="button"
+          onClick={addTableItem}
+          className="text-sm bg-slate-200 text-slate-800 px-3 py-1.5 rounded-md hover:bg-slate-300"
+        >
+          + Add Table
+        </button>
       </div>
 
-      {(text.trim().length > 0 || mediaBlocks.length > 0) && (
-        <div>
-          <p className="text-xs font-medium text-slate-500 uppercase mb-1">Preview</p>
+      <p className="text-xs text-slate-400">
+        Wrap math in <code className="bg-slate-100 px-1 rounded">$...$</code> within any text
+        block. New items are added at the bottom — use ↑/↓ to arrange them in any order.
+      </p>
+
+      {items.length > 0 && (
+        <div className="mt-2 pt-3 border-t border-slate-200">
+          <p className="text-xs font-medium text-slate-500 uppercase mb-2">Preview (final order)</p>
           <div className="bg-slate-50 rounded-md p-4 text-lg text-slate-900">
             <ContentBlockRenderer blocks={previewBlocks} />
           </div>

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import AdminLayout from '../components/AdminLayout'
+import ShareAssessmentModal from '../components/ShareAssessmentModal'
 import { supabase } from '../lib/supabaseClient'
-import { useAuth } from '../contexts/AuthContext'
 
 interface AssessmentRow {
   id: string
@@ -12,88 +13,118 @@ interface AssessmentRow {
 }
 
 export default function AssessmentsPage() {
-  const { profile, session, signOut } = useAuth()
   const [assessments, setAssessments] = useState<AssessmentRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [shareTarget, setShareTarget] = useState<AssessmentRow | null>(null)
 
   useEffect(() => {
     fetchAssessments()
   }, [])
 
   async function fetchAssessments() {
-    setLoading(true)
-    const { data, error } = await supabase
+    setLoading(false)
+    const { data } = await supabase
       .from('assessments')
       .select('id, name, description, status, created_at')
       .order('created_at', { ascending: false })
 
-    if (error) {
-      setError(error.message)
-    } else {
-      setAssessments(data as AssessmentRow[])
-    }
+    setAssessments(data as AssessmentRow[] ?? [])
     setLoading(false)
   }
 
+  function statusBadge(status: AssessmentRow['status']) {
+    const styles = {
+      published: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      draft: 'bg-amber-50 text-amber-700 border-amber-200',
+      archived: 'bg-slate-100 text-slate-600 border-slate-200',
+    }
+    return (
+      <span
+        className={`text-xs px-2.5 py-0.5 rounded-full border font-semibold capitalize ${styles[status]}`}
+      >
+        {status}
+      </span>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-slate-100">
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex justify-between items-center">
-        <div className="flex items-center gap-6">
-          <h1 className="text-xl font-semibold text-slate-800">Assessments</h1>
-          <Link to="/admin" className="text-sm text-blue-600 hover:underline">
-            ← Back to Dashboard
-          </Link>
+    <AdminLayout
+      title="Assessments"
+      subtitle="Manage diagnostic tests, section modules, and student link delivery"
+      actions={
+        <Link
+          to="/admin/assessments/new"
+          className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition"
+        >
+          + Create Assessment
+        </Link>
+      }
+    >
+      {loading ? (
+        <p className="text-slate-500">Loading assessments...</p>
+      ) : assessments.length === 0 ? (
+        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
+          <p className="text-slate-600 font-medium">No assessments created yet.</p>
           <Link
             to="/admin/assessments/new"
-            className="text-sm bg-blue-600 text-white px-3 py-1.5 rounded-md hover:bg-blue-700"
+            className="mt-3 inline-block text-xs bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg"
           >
-            + Create Assessment
+            Create Your First Assessment
           </Link>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-slate-600">
-            {profile?.full_name || session?.user.email} ({profile?.role})
-          </span>
-          <button
-            onClick={signOut}
-            className="text-sm bg-slate-800 text-white px-3 py-1.5 rounded-md hover:bg-slate-900"
-          >
-            Sign Out
-          </button>
-        </div>
-      </header>
-
-      <main className="p-6 max-w-4xl mx-auto">
-        {loading && <p className="text-slate-600">Loading assessments...</p>}
-        {error && <p className="text-red-600 bg-red-50 rounded-md px-4 py-3">Error: {error}</p>}
-
-        {!loading && !error && assessments.length === 0 && (
-          <p className="text-slate-600">No assessments yet. Create your first one above.</p>
-        )}
-
-        {!loading && !error && assessments.length > 0 && (
-          <div className="space-y-3">
-            {assessments.map((a) => (
-              <Link
-                key={a.id}
-                to={`/admin/assessments/${a.id}`}
-                className="block bg-white rounded-lg shadow-sm p-4 border border-slate-200 hover:border-blue-300 transition"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-medium text-slate-900">{a.name}</h2>
-                    {a.description && (
-                      <p className="text-sm text-slate-500 mt-1">{a.description}</p>
-                    )}
-                  </div>
-                  <span className="text-xs bg-slate-100 px-2 py-1 rounded">{a.status}</span>
+      ) : (
+        <div className="grid gap-3">
+          {assessments.map((a) => (
+            <div
+              key={a.id}
+              className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+            >
+              <div>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-base font-bold text-slate-900">{a.name}</h2>
+                  {statusBadge(a.status)}
                 </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </main>
-    </div>
+                {a.description && (
+                  <p className="text-xs text-slate-500 mt-1 max-w-xl">{a.description}</p>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                {a.status === 'published' && (
+                  <button
+                    type="button"
+                    onClick={() => setShareTarget(a)}
+                    className="text-xs bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-semibold px-3 py-1.5 rounded-md transition"
+                  >
+                    🔗 Share Link
+                  </button>
+                )}
+                <Link
+                  to={`/admin/assessments/${a.id}/results`}
+                  className="text-xs bg-slate-100 text-slate-700 hover:bg-slate-200 font-medium px-3 py-1.5 rounded-md transition"
+                >
+                  Results
+                </Link>
+                <Link
+                  to={`/admin/assessments/${a.id}`}
+                  className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold px-3 py-1.5 rounded-md transition"
+                >
+                  Edit / Modules →
+                </Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {shareTarget && (
+        <ShareAssessmentModal
+          assessmentId={shareTarget.id}
+          assessmentName={shareTarget.name}
+          isOpen={true}
+          onClose={() => setShareTarget(null)}
+        />
+      )}
+    </AdminLayout>
   )
 }

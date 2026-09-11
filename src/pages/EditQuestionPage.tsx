@@ -2,8 +2,11 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { supabase } from '../lib/supabaseClient'
 import ContentTextEditor from '../components/ContentTextEditor'
-import ChoicesEditor, { type Choice } from '../components/ChoicesEditor'
+import ChoicesTextEditor, { type Choice } from '../components/ChoicesTextEditor'
 import type { ContentBlock } from '../lib/contentBlocks'
+import TrueFalseAnswerEditor from '../components/TrueFalseAnswerEditor'
+import GridInAnswerEditor from '../components/GridInAnswerEditor'
+import TaxonomySelector, { type TaxonomySelection } from '../components/TaxonomySelector'
 
 interface AnswerType {
   id: string
@@ -21,8 +24,15 @@ export default function EditQuestionPage() {
   const [answerTypeId, setAnswerTypeId] = useState('')
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium')
   const [points, setPoints] = useState(1)
+  const [taxonomy, setTaxonomy] = useState<TaxonomySelection>({ exam_id: '', subject_id: '', category_id: '', chapter_id: '', lesson_id: '', skill_id: '' })
   const [status, setStatus] = useState<'draft' | 'published' | 'archived'>('draft')
+  const [initialChoices, setInitialChoices] = useState<Choice[]>([])
   const [choices, setChoices] = useState<Choice[]>([])
+  const [trueFalseAnswer, setTrueFalseAnswer] = useState<boolean | null>(null)
+  const [gridInAnswer, setGridInAnswer] = useState<{ value: string; tolerance: string }>({
+    value: '',
+    tolerance: '',
+  })
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -32,12 +42,12 @@ export default function EditQuestionPage() {
     async function fetchData() {
       if (!questionId) return
 
-      const [{ data: types }, { data: question, error: qError }, { data: existingChoices }] =
+      const [{ data: types }, { data: question, error: qError }, { data: existingChoices }, { data: existingAnswer }] =
         await Promise.all([
           supabase.from('answer_types').select('id, code, label'),
           supabase
             .from('questions')
-            .select('content_blocks, answer_type_id, difficulty, points, status')
+            .select('content_blocks, answer_type_id, difficulty, points, status, exam_id, subject_id, category_id, chapter_id, lesson_id, skill_id')
             .eq('id', questionId)
             .single(),
           supabase
@@ -45,6 +55,11 @@ export default function EditQuestionPage() {
             .select('id, content_blocks, is_correct, display_order')
             .eq('question_id', questionId)
             .order('display_order'),
+          supabase
+            .from('question_correct_answers')
+            .select('answer_data')
+            .eq('question_id', questionId)
+            .maybeSingle(),
         ])
 
       if (qError || !question) {
@@ -60,14 +75,28 @@ export default function EditQuestionPage() {
       setDifficulty(question.difficulty)
       setPoints(question.points)
       setStatus(question.status)
+      setTaxonomy({
+        exam_id: question.exam_id ?? '', subject_id: question.subject_id ?? '', category_id: question.category_id ?? '',
+        chapter_id: question.chapter_id ?? '', lesson_id: question.lesson_id ?? '', skill_id: question.skill_id ?? '',
+      })
 
-      if (existingChoices) {
-        setChoices(
-          existingChoices.map((c) => ({
-            content_blocks: c.content_blocks,
-            is_correct: c.is_correct,
-          }))
-        )
+      const loadedChoices = (existingChoices ?? []).map((c) => ({
+        content_blocks: c.content_blocks,
+        is_correct: c.is_correct,
+      }))
+      setInitialChoices(loadedChoices)
+      setChoices(loadedChoices)
+
+      if (existingAnswer?.answer_data) {
+        const data = existingAnswer.answer_data as { value?: unknown; tolerance?: unknown }
+        if (typeof data.value === 'boolean') {
+          setTrueFalseAnswer(data.value)
+        } else if (typeof data.value === 'number') {
+          setGridInAnswer({
+            value: String(data.value),
+            tolerance: data.tolerance !== undefined ? String(data.tolerance) : '',
+          })
+        }
       }
 
       setLoading(false)
@@ -78,6 +107,8 @@ export default function EditQuestionPage() {
 
   const selectedAnswerType = answerTypes.find((t) => t.id === answerTypeId)
   const isMCQ = selectedAnswerType?.code === 'MCQ'
+  const isTrueFalse = selectedAnswerType?.code === 'TRUE_FALSE'
+  const isGridIn = selectedAnswerType?.code === 'GRID_IN'
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -97,6 +128,14 @@ export default function EditQuestionPage() {
         return
       }
     }
+    if (isTrueFalse && trueFalseAnswer === null) {
+      setError('Select the correct answer (True or False).')
+      return
+    }
+    if (isGridIn && gridInAnswer.value.trim() === '') {
+      setError('Enter the correct numeric answer.')
+      return
+    }
 
     setSaving(true)
 
@@ -107,6 +146,12 @@ export default function EditQuestionPage() {
         answer_type_id: answerTypeId,
         difficulty,
         points,
+        exam_id: taxonomy.exam_id || null,
+        subject_id: taxonomy.subject_id || null,
+        category_id: taxonomy.category_id || null,
+        chapter_id: taxonomy.chapter_id || null,
+        lesson_id: taxonomy.lesson_id || null,
+        skill_id: taxonomy.skill_id || null,
         status,
         updated_at: new Date().toISOString(),
       })
@@ -118,16 +163,32 @@ export default function EditQuestionPage() {
       return
     }
 
-    if (isMCQ) {
-      // Simplest correct approach: delete existing choices and re-insert
-      // the current set. This avoids tricky "diff old vs new choices"
-      // logic (matching which choice is which, handling removed/added
-      // choices) — a good tradeoff for now since choices have no other
-      // table referencing them yet. We'll revisit this only if a future
-      // feature (e.g. per-choice analytics) needs stable choice IDs
-      // across edits.
-      await supabase.from('question_choices').delete().eq('question_id', questionId)
+    // Always remove old choices and old correct-answer row first — the
+    // answer type may have changed, so whichever table applied before
+    // might not apply anymore.
+    const { error: deleteChoicesError } = await supabase
+      .from('question_choices')
+      .delete()
+      .eq('question_id', questionId)
 
+    if (deleteChoicesError) {
+      setError(`Question was updated, but old choices could not be removed: ${deleteChoicesError.message}`)
+      setSaving(false)
+      return
+    }
+
+    const { error: deleteAnswerError } = await supabase
+      .from('question_correct_answers')
+      .delete()
+      .eq('question_id', questionId)
+
+    if (deleteAnswerError) {
+      setError(`Question was updated, but old correct answer could not be removed: ${deleteAnswerError.message}`)
+      setSaving(false)
+      return
+    }
+
+    if (isMCQ) {
       const choiceRows = choices.map((choice, index) => ({
         question_id: questionId,
         content_blocks: choice.content_blocks,
@@ -139,6 +200,33 @@ export default function EditQuestionPage() {
 
       if (choicesError) {
         setError(`Question saved, but choices failed to update: ${choicesError.message}`)
+        setSaving(false)
+        return
+      }
+    }
+
+    if (isTrueFalse) {
+      const { error: answerError } = await supabase.from('question_correct_answers').insert({
+        question_id: questionId,
+        answer_data: { value: trueFalseAnswer },
+      })
+      if (answerError) {
+        setError(`Question saved, but correct answer failed to update: ${answerError.message}`)
+        setSaving(false)
+        return
+      }
+    }
+
+    if (isGridIn) {
+      const { error: answerError } = await supabase.from('question_correct_answers').insert({
+        question_id: questionId,
+        answer_data: {
+          value: parseFloat(gridInAnswer.value),
+          tolerance: gridInAnswer.tolerance ? parseFloat(gridInAnswer.tolerance) : 0,
+        },
+      })
+      if (answerError) {
+        setError(`Question saved, but correct answer failed to update: ${answerError.message}`)
         setSaving(false)
         return
       }
@@ -182,31 +270,39 @@ export default function EditQuestionPage() {
             <ContentTextEditor initialBlocks={initialBlocks ?? []} onChange={setContentBlocks} />
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Answer Type</label>
+            <select
+              value={answerTypeId}
+              onChange={(e) => setAnswerTypeId(e.target.value)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2"
+            >
+              {answerTypes.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {isMCQ && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Answer Choices
               </label>
-              <ChoicesEditor choices={choices} onChange={setChoices} />
+              <ChoicesTextEditor initialChoices={initialChoices} onChange={setChoices} />
             </div>
           )}
 
-          <div className="grid grid-cols-4 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Answer Type</label>
-              <select
-                value={answerTypeId}
-                onChange={(e) => setAnswerTypeId(e.target.value)}
-                className="w-full rounded-md border border-slate-300 px-3 py-2"
-              >
-                {answerTypes.map((type) => (
-                  <option key={type.id} value={type.id}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          {isTrueFalse && (
+            <TrueFalseAnswerEditor value={trueFalseAnswer} onChange={setTrueFalseAnswer} />
+          )}
 
+          {isGridIn && (
+            <GridInAnswerEditor value={gridInAnswer} onChange={setGridInAnswer} />
+          )}
+
+          <div className="grid grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Difficulty</label>
               <select
@@ -245,6 +341,8 @@ export default function EditQuestionPage() {
               </select>
             </div>
           </div>
+
+          <TaxonomySelector value={taxonomy} onChange={setTaxonomy} />
 
           {error && (
             <p className="text-sm text-red-600 bg-red-50 rounded-md px-3 py-2">{error}</p>
