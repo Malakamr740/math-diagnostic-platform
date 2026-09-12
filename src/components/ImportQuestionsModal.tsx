@@ -472,7 +472,7 @@ export default function ImportQuestionsModal({
               </div>
 
               <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                {filteredPreview.map((item, idx) => {
+                {filteredPreview.map((item) => {
                   const originalIndex = parsedItems.indexOf(item)
 
                   return (

@@ -158,7 +158,7 @@ export default function AdminAttemptDetailPage() {
     )
   }
 
-  const { student_info, overall, breakdowns, questions, courses, org_settings } = report
+  const { student_info, overall, breakdowns, questions, courses } = report
 
   const categoryBreakdowns = breakdowns.filter((b) => b.type === 'category')
   const skillBreakdowns = breakdowns.filter((b) => b.type === 'skill')
