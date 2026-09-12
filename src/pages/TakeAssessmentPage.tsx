@@ -19,10 +19,16 @@ interface AttemptQuestion {
   answer_type_code: string
   points: number
   required: boolean
+  difficulty?: 'easy' | 'medium' | 'hard' // 👈 ADD THIS LINE
   choices: { id: string; content_blocks: ContentBlock[] }[]
 }
-
-type ScreenState = 'loading' | 'module_intro' | 'in_progress' | 'module_complete' | 'assessment_complete' | 'error'
+type ScreenState =
+  | 'loading'
+  | 'module_intro'
+  | 'in_progress'
+  | 'module_complete'
+  | 'assessment_complete'
+  | 'error'
 
 export default function TakeAssessmentPage() {
   const { attemptId } = useParams<{ attemptId: string }>()
@@ -119,7 +125,7 @@ export default function TakeAssessmentPage() {
     }
     setQuestionsById(byId)
 
-    // Restore previously saved answers (refresh-recovery)
+    // Restore previously saved answers
     const { data: savedAnswers } = await supabase.rpc('get_saved_answers', {
       p_attempt_id: attemptId,
       p_resume_token: resumeToken,
@@ -134,7 +140,7 @@ export default function TakeAssessmentPage() {
       setAnswers(restored)
     }
 
-    // Set up the timer, accounting for time already elapsed if resuming
+    // Set up the countdown timer
     if (currentModule.timing_enabled && currentModule.time_limit_minutes) {
       const elapsedMs = Date.now() - new Date(started_at).getTime()
       const totalSeconds = currentModule.time_limit_minutes * 60
@@ -149,7 +155,7 @@ export default function TakeAssessmentPage() {
     setScreen('in_progress')
   }
 
-  // Countdown timer
+  // Countdown timer effect
   useEffect(() => {
     if (screen !== 'in_progress' || secondsRemaining === null) return
 
@@ -165,6 +171,7 @@ export default function TakeAssessmentPage() {
 
   async function saveCurrentAnswer(questionId: string, value: Record<string, unknown>) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }))
+    setErrorMessage('') // Clear error message as soon as student answers
 
     if (!attemptId || !resumeToken || !moduleAttemptId) return
 
@@ -181,18 +188,42 @@ export default function TakeAssessmentPage() {
   }
 
   function goToQuestion(index: number) {
+    if (index < 0 || index >= orderedQuestionIds.length) return
     questionStartTimeRef.current = Date.now()
     setCurrentQuestionIndex(index)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function isQuestionAnswered(qId: string): boolean {
+    const val = answers[qId]
+    if (!val) return false
+    if (val.choice_id) return true
+    if (val.value !== undefined && String(val.value).trim() !== '') return true
+    return false
   }
 
   async function handleSubmitModule(timedOut: boolean) {
     if (submittingRef.current) return
     submittingRef.current = true
+    setErrorMessage('')
 
     if (!timedOut) {
-      const unansweredRequired = orderedQuestionIds.filter((id) => questionsById[id]?.required && Object.keys(answers[id] ?? {}).length === 0)
-      if (unansweredRequired.length > 0) {
-        setErrorMessage(`Answer all ${unansweredRequired.length} required question${unansweredRequired.length === 1 ? '' : 's'} before submitting.`)
+      const missingIndexes: number[] = []
+      orderedQuestionIds.forEach((id, idx) => {
+        if (!isQuestionAnswered(id)) {
+          missingIndexes.push(idx + 1)
+        }
+      })
+
+      if (missingIndexes.length > 0) {
+        setErrorMessage(
+          `Please answer Question${missingIndexes.length > 1 ? 's' : ''} ${missingIndexes.join(
+            ', '
+          )} before submitting.`
+        )
+        submittingRef.current = false
+        // Jump directly to the first unanswered question
+        goToQuestion(missingIndexes[0] - 1)
         return
       }
     }
@@ -206,6 +237,7 @@ export default function TakeAssessmentPage() {
         p_elapsed_seconds: elapsed,
         p_timed_out: timedOut,
       })
+
       if (error) {
         setErrorMessage(error.message)
         submittingRef.current = false
@@ -233,24 +265,20 @@ export default function TakeAssessmentPage() {
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
-  // ============================================================
-  // RENDER
-  // ============================================================
-
   if (screen === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <p className="text-slate-600">Loading...</p>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <p className="text-sm font-semibold text-slate-600">Loading Assessment...</p>
       </div>
     )
   }
 
   if (screen === 'error') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
-        <p className="text-red-600 bg-red-50 rounded-md px-4 py-3 max-w-md text-center">
-          {errorMessage}
-        </p>
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+        <div className="max-w-md w-full bg-white border border-red-200 rounded-2xl p-6 text-center shadow-xs">
+          <p className="text-sm text-red-600 font-medium">{errorMessage}</p>
+        </div>
       </div>
     )
   }
@@ -258,25 +286,25 @@ export default function TakeAssessmentPage() {
   if (screen === 'module_intro') {
     const currentModule = modules[currentModuleIndex]
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
-        <div className="max-w-lg w-full bg-white rounded-lg shadow-sm p-8 text-center">
-          <p className="text-sm text-slate-500 mb-2">
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+        <div className="max-w-lg w-full bg-white rounded-2xl shadow-xs border border-slate-200 p-8 text-center space-y-4">
+          <span className="text-xs font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full">
             Module {currentModuleIndex + 1} of {modules.length}
-          </p>
-          <h1 className="text-2xl font-semibold text-slate-900 mb-3">{currentModule?.name}</h1>
+          </span>
+          <h1 className="text-2xl font-black text-slate-900">{currentModule?.name}</h1>
           {currentModule?.description && (
-            <p className="text-slate-600 mb-4">{currentModule.description}</p>
+            <p className="text-sm text-slate-600 leading-relaxed">{currentModule.description}</p>
           )}
           {currentModule?.timing_enabled && (
-            <p className="text-sm text-slate-500 mb-6">
-              Time limit: {currentModule.time_limit_minutes} minutes
-            </p>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-semibold text-slate-700">
+              ⏱ Time Limit: {currentModule.time_limit_minutes} minutes
+            </div>
           )}
           <button
             onClick={beginCurrentModule}
-            className="bg-blue-600 text-white px-6 py-2.5 rounded-md hover:bg-blue-700 font-medium"
+            className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition shadow-xs"
           >
-            Begin Module
+            Start This Section →
           </button>
         </div>
       </div>
@@ -285,17 +313,18 @@ export default function TakeAssessmentPage() {
 
   if (screen === 'module_complete') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
-        <div className="max-w-lg w-full bg-white rounded-lg shadow-sm p-8 text-center">
-          <h1 className="text-2xl font-semibold text-slate-900 mb-3">Module Complete</h1>
-          <p className="text-slate-600 mb-6">
-            Great work! Ready to continue to the next module?
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+        <div className="max-w-lg w-full bg-white rounded-2xl shadow-xs border border-slate-200 p-8 text-center space-y-4">
+          <span className="text-4xl block">🎉</span>
+          <h1 className="text-2xl font-black text-slate-900">Section Complete</h1>
+          <p className="text-sm text-slate-600">
+            You've completed Module {currentModuleIndex + 1}. Ready for the next section?
           </p>
           <button
             onClick={goToNextModule}
-            className="bg-blue-600 text-white px-6 py-2.5 rounded-md hover:bg-blue-700 font-medium"
+            className="w-full bg-blue-600 text-white font-bold py-3 rounded-xl hover:bg-blue-700 transition"
           >
-            Continue
+            Continue to Module {currentModuleIndex + 2} →
           </button>
         </div>
       </div>
@@ -304,88 +333,149 @@ export default function TakeAssessmentPage() {
 
   if (screen === 'assessment_complete') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
-        <div className="max-w-lg w-full bg-white rounded-lg shadow-sm p-8 text-center">
-          <h1 className="text-2xl font-semibold text-slate-900 mb-3">Assessment Complete!</h1>
-          <p className="text-slate-600 mb-6">
-            Thank you for completing the assessment.
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 px-4">
+        <div className="max-w-lg w-full bg-white rounded-2xl shadow-xs border border-slate-200 p-8 text-center space-y-4">
+          <span className="text-5xl block">🏆</span>
+          <h1 className="text-2xl font-black text-slate-900">Assessment Finished!</h1>
+          <p className="text-sm text-slate-600">
+            Your responses have been saved and scored. View your detailed diagnostic report below:
           </p>
           <Link
             to={`/report/${attemptId}?token=${resumeToken}`}
-            className="inline-block bg-blue-600 text-white px-6 py-2.5 rounded-md hover:bg-blue-700 font-medium"
+            className="inline-block w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl hover:bg-blue-700 transition shadow-xs"
           >
-            View My Results
+            View My Diagnostic Results →
           </Link>
         </div>
       </div>
     )
   }
 
-  // screen === 'in_progress'
   const currentQuestionId = orderedQuestionIds[currentQuestionIndex]
   const currentQuestion = currentQuestionId ? questionsById[currentQuestionId] : null
+  const totalCount = orderedQuestionIds.length
+  const answeredCount = orderedQuestionIds.filter(isQuestionAnswered).length
 
   return (
-    <div className="min-h-screen bg-slate-100">
-      <header className="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
-        <span className="text-sm text-slate-600">
-          {modules[currentModuleIndex]?.name} — Question {currentQuestionIndex + 1} of{' '}
-          {orderedQuestionIds.length}
-        </span>
-        {secondsRemaining !== null && (
-          <span
-            className={`text-sm font-mono font-medium px-3 py-1 rounded ${
-              secondsRemaining < 60 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'
-            }`}
-          >
-            {formatTime(Math.max(0, secondsRemaining))}
-          </span>
-        )}
+    <div className="min-h-screen bg-slate-100/70 pb-16">
+      {/* Sticky Test Header with Question Navigator Strip */}
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 px-4 sm:px-6 py-3">
+        <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
+          <div>
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+              {modules[currentModuleIndex]?.name}
+            </span>
+            <p className="text-xs font-bold text-slate-800">
+              Answered {answeredCount} of {totalCount} questions
+            </p>
+          </div>
+
+          {secondsRemaining !== null && (
+            <div
+              className={`font-mono text-xs font-bold px-3 py-1.5 rounded-lg border ${
+                secondsRemaining < 120
+                  ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse'
+                  : 'bg-slate-50 text-slate-800 border-slate-200'
+              }`}
+            >
+              ⏱ {formatTime(Math.max(0, secondsRemaining))}
+            </div>
+          )}
+        </div>
+
+        {/* Interactive Question Palette */}
+        <div className="max-w-3xl mx-auto pt-2.5 flex items-center gap-1.5 overflow-x-auto pb-1">
+          {orderedQuestionIds.map((id, idx) => {
+            const isAnswered = isQuestionAnswered(id)
+            const isCurrent = idx === currentQuestionIndex
+
+            let btnClass = 'bg-slate-100 text-slate-600 hover:bg-slate-200 border-slate-200'
+            if (isCurrent) {
+              btnClass = 'bg-blue-600 text-white border-blue-600 shadow-xs font-bold ring-2 ring-blue-300'
+            } else if (isAnswered) {
+              btnClass = 'bg-emerald-50 text-emerald-700 border-emerald-300 font-semibold'
+            }
+
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => goToQuestion(idx)}
+                className={`w-7 h-7 shrink-0 rounded-lg text-xs border flex items-center justify-center transition ${btnClass}`}
+              >
+                {idx + 1}
+              </button>
+            )
+          })}
+        </div>
       </header>
 
-      <main className="max-w-2xl mx-auto p-6">
-        {errorMessage && <p className="mb-4 rounded-md bg-red-50 px-4 py-3 text-sm text-red-700">{errorMessage}</p>}
+      {/* Main Question Card */}
+      <main className="max-w-3xl mx-auto px-4 pt-6">
+        {errorMessage && (
+          <div className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 px-4 py-3 rounded-xl text-xs font-semibold flex items-center gap-2">
+            <span>⚠️</span> {errorMessage}
+          </div>
+        )}
+
         {currentQuestion ? (
-          <div className="bg-white rounded-lg shadow-sm p-6">
-            <div className="text-lg text-slate-900 mb-6">
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-xs space-y-6">
+            <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-100 pb-3">
+              <span className="font-bold text-slate-800">
+                Question {currentQuestionIndex + 1} of {totalCount}
+              </span>
+              <span className="bg-slate-100 px-2 py-0.5 rounded capitalize font-medium text-slate-600">
+                {currentQuestion.difficulty || 'medium'} &middot; {currentQuestion.points || 1} pt
+              </span>
+            </div>
+
+            {/* Question Prompt */}
+            <div className="text-base sm:text-lg font-medium text-slate-900 leading-relaxed">
               <ContentBlockRenderer blocks={currentQuestion.content_blocks} />
             </div>
 
-            <QuestionAnswerInput
-              answerTypeCode={currentQuestion.answer_type_code}
-              choices={currentQuestion.choices}
-              value={answers[currentQuestion.question_id] ?? {}}
-              onChange={(value) => saveCurrentAnswer(currentQuestion.question_id, value)}
-            />
+            {/* Answer Input Component */}
+            <div className="pt-2">
+              <QuestionAnswerInput
+                answerTypeCode={currentQuestion.answer_type_code}
+                choices={currentQuestion.choices}
+                value={answers[currentQuestion.question_id] ?? {}}
+                onChange={(value) => saveCurrentAnswer(currentQuestion.question_id, value)}
+              />
+            </div>
 
-            <div className="flex justify-between mt-8 pt-4 border-t border-slate-100">
+            {/* Bottom Navigation Buttons */}
+            <div className="flex items-center justify-between pt-6 border-t border-slate-100">
               <button
+                type="button"
                 onClick={() => goToQuestion(currentQuestionIndex - 1)}
                 disabled={currentQuestionIndex === 0}
-                className="text-sm bg-slate-200 text-slate-800 px-4 py-2 rounded-md hover:bg-slate-300 disabled:opacity-40"
+                className="px-4 py-2 text-xs font-bold rounded-lg border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-30"
               >
                 ← Previous
               </button>
 
-              {currentQuestionIndex < orderedQuestionIds.length - 1 ? (
+              {currentQuestionIndex < totalCount - 1 ? (
                 <button
+                  type="button"
                   onClick={() => goToQuestion(currentQuestionIndex + 1)}
-                  className="text-sm bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700"
+                  className="px-5 py-2 text-xs font-bold rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition shadow-xs"
                 >
                   Next →
                 </button>
               ) : (
                 <button
+                  type="button"
                   onClick={() => handleSubmitModule(false)}
-                  className="text-sm bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700"
+                  className="px-6 py-2.5 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition shadow-xs"
                 >
-                  Submit Module
+                  Submit Section ✓
                 </button>
               )}
             </div>
           </div>
         ) : (
-          <p className="text-slate-600">No questions in this module.</p>
+          <p className="text-slate-500 text-center py-12">No questions loaded in this section.</p>
         )}
       </main>
     </div>

@@ -110,3 +110,39 @@ code {
   background: var(--code-bg);
 } */
 @import "tailwindcss";
+
+@import "tailwindcss";
+
+/* Protect KaTeX math formulas from Tailwind CSS preflight resets */
+.katex {
+  font-size: 1.15em !important;
+  text-rendering: auto;
+  line-height: 1.2 !important;
+  white-space: normal;
+}
+
+.katex .katex-html {
+  white-space: normal;
+}
+
+/* Fix fraction bar line being set to 0px by Tailwind */
+.katex .frac-line {
+  border-bottom-width: 0.05em !important;
+  border-bottom-style: solid !important;
+  border-color: currentColor !important;
+}
+
+/* Ensure square root and nth-root indices align properly */
+.katex .sqrt > .root {
+  position: relative !important;
+  margin-right: -0.55em !important;
+}
+
+.katex .vlist-t {
+  display: inline-table !important;
+  table-layout: fixed !important;
+}
+
+.katex .mord, .katex .mbin, .katex .mrel {
+  line-height: normal !important;
+}
