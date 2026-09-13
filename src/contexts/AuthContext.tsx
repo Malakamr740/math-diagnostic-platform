@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setLoading(false)
   }
-
+//
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     return { error: error ? error.message : null }
@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     </AuthContext.Provider>
   )
 }
-
+//
 // Custom hook for components to access auth state easily:
 // const { session, profile, signOut } = useAuth()
 export function useAuth() {
@@ -92,4 +92,5 @@ export function useAuth() {
     throw new Error('useAuth must be used within an AuthProvider')
   }
   return context
+  //
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import AdminLayout from '../components/AdminLayout'
 import ImportQuestionsModal from '../components/ImportQuestionsModal'
@@ -54,6 +54,32 @@ export default function QuestionBankPage() {
   const [questionToDelete, setQuestionToDelete] = useState<QuestionRow | null>(null)
   const [deleting, setDeleting] = useState(false)
 
+  // Text extraction helper defined as a memoized callback to maintain hook hierarchy
+  const extractText = useCallback((blocks: ContentBlock[] = []): string => {
+    return blocks
+      .map((b) => (b.type === 'text' ? b.value : b.type === 'math' ? b.latex : ''))
+      .join(' ')
+      .toLowerCase()
+  }, [])
+
+  // Hook declared at the top level before data fetching side effects and UI conditions
+  const filteredQuestions = useMemo(() => {
+    return questions.filter((q) => {
+      if (selectedSetFilter && q.question_set_id !== selectedSetFilter) return false
+      if (selectedCategory && q.category?.id !== selectedCategory) return false
+      if (selectedDifficulty && q.difficulty !== selectedDifficulty) return false
+      if (selectedAnswerType && q.answer_type?.code !== selectedAnswerType) return false
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase()
+        const match =
+          extractText(q.content_blocks).includes(query) ||
+          (q.skill?.name && q.skill.name.toLowerCase().includes(query))
+        if (!match) return false
+      }
+      return true
+    })
+  }, [questions, selectedSetFilter, selectedCategory, selectedDifficulty, selectedAnswerType, searchQuery, extractText])
+
   useEffect(() => {
     fetchData()
   }, [])
@@ -86,7 +112,6 @@ export default function QuestionBankPage() {
     setQuestions(loadedQuestions)
     setCategories(catData ?? [])
 
-    // Calculate count per set
     const setList = (setsData ?? []).map((s) => ({
       ...s,
       questions_count: loadedQuestions.filter((q) => q.question_set_id === s.id).length,
@@ -95,30 +120,6 @@ export default function QuestionBankPage() {
 
     setLoading(false)
   }
-
-  function extractText(blocks: ContentBlock[] = []): string {
-    return blocks
-      .map((b) => (b.type === 'text' ? b.value : b.type === 'math' ? b.latex : ''))
-      .join(' ')
-      .toLowerCase()
-  }
-
-  const filteredQuestions = useMemo(() => {
-    return questions.filter((q) => {
-      if (selectedSetFilter && q.question_set_id !== selectedSetFilter) return false
-      if (selectedCategory && q.category?.id !== selectedCategory) return false
-      if (selectedDifficulty && q.difficulty !== selectedDifficulty) return false
-      if (selectedAnswerType && q.answer_type?.code !== selectedAnswerType) return false
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase()
-        const match =
-          extractText(q.content_blocks).includes(query) ||
-          (q.skill?.name && q.skill.name.toLowerCase().includes(query))
-        if (!match) return false
-      }
-      return true
-    })
-  }, [questions, selectedSetFilter, selectedCategory, selectedDifficulty, selectedAnswerType, searchQuery])
 
   async function convertSetToAssessment(setId: string, title: string) {
     if (!confirm(`Create a ready-to-publish assessment from "${title}"?`)) return
@@ -202,10 +203,15 @@ export default function QuestionBankPage() {
           )}
         </div>
 
-        {/* ========================================================= */}
+        {/* Loading Spinner Indicator */}
+        {loading && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500 text-xs font-medium">
+            Loading question bank data...
+          </div>
+        )}
+
         {/* VIEW MODE 1: TEST COLLECTIONS DIRECTORY */}
-        {/* ========================================================= */}
-        {viewMode === 'sets' && (
+        {!loading && viewMode === 'sets' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {sets.map((set) => (
               <div
@@ -259,10 +265,8 @@ export default function QuestionBankPage() {
           </div>
         )}
 
-        {/* ========================================================= */}
         {/* VIEW MODE 2: ITEMIZED QUESTIONS WITH FILTERS */}
-        {/* ========================================================= */}
-        {viewMode === 'all' && (
+        {!loading && viewMode === 'all' && (
           <div className="space-y-4">
             {/* Filter Bar */}
             <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
