@@ -1,7 +1,6 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabaseClient'
 import { parseContentText } from '../lib/contentBlocks'
-import ContentBlockRenderer from './ContentBlockRenderer'
 
 interface ImportQuestionsModalProps {
   isOpen: boolean
@@ -40,37 +39,27 @@ export default function ImportQuestionsModal({
   const [parsedItems, setParsedItems] = useState<RawImportItem[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
 
-  // Question Set / Collection State
   const [existingSets, setExistingSets] = useState<QuestionSetOption[]>([])
   const [selectedSetMode, setSelectedSetMode] = useState<'new' | 'existing'>('new')
   const [selectedSetId, setSelectedSetId] = useState('')
   const [newSetTitle, setNewSetTitle] = useState('')
 
-  // Global Defaults / Fallbacks
   const [defaultExam, setDefaultExam] = useState('EST I')
   const [defaultSubject, setDefaultSubject] = useState('Math')
-
-  const [previewCategoryFilter, setPreviewCategoryFilter] = useState('ALL')
-  const [activeEditingIdx, setActiveEditingIdx] = useState<number | null>(null)
 
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState('')
 
   useEffect(() => {
-    if (isOpen) {
-      loadQuestionSets()
-      if (jsonText) validateAndExtract(jsonText)
+    async function loadSets() {
+      const { data } = await supabase.from('question_sets').select('id, title').order('title')
+      if (data && data.length > 0) {
+        setExistingSets(data)
+        setSelectedSetId(data[0].id)
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen])
-
-  async function loadQuestionSets() {
-    const { data } = await supabase.from('question_sets').select('id, title').order('title')
-    setExistingSets(data ?? [])
-    if (data && data.length > 0) {
-      setSelectedSetId(data[0].id)
-    }
-  }
+    loadSets()
+  }, [])
 
   if (!isOpen) return null
 
@@ -92,7 +81,7 @@ export default function ImportQuestionsModal({
       for (let i = 0; i < data.length; i++) {
         const item = data[i]
         if (!item.question || typeof item.question !== 'string') {
-          setParseError(`Question #${i + 1} is missing a "question" string.`)
+          setParseError(`Question #${i + 1} is missing a "question" text string.`)
           setParsedItems([])
           return
         }
@@ -137,19 +126,6 @@ export default function ImportQuestionsModal({
     reader.readAsText(file)
   }
 
-  const categoriesDetected = useMemo(() => {
-    const set = new Set<string>()
-    parsedItems.forEach((i) => {
-      if (i.category) set.add(i.category)
-    })
-    return Array.from(set)
-  }, [parsedItems])
-
-  const filteredPreview = useMemo(() => {
-    if (previewCategoryFilter === 'ALL') return parsedItems
-    return parsedItems.filter((i) => (i.category || 'Uncategorized') === previewCategoryFilter)
-  }, [parsedItems, previewCategoryFilter])
-
   async function handleImport() {
     if (parsedItems.length === 0) return
     setImporting(true)
@@ -190,7 +166,7 @@ export default function ImportQuestionsModal({
       const typeMap = new Map<string, string>()
       answerTypes?.forEach((at) => typeMap.set(at.code, at.id))
 
-      // 3. Process Questions
+      // 3. Process each question
       for (let i = 0; i < parsedItems.length; i++) {
         const item = parsedItems[i]
         setImportProgress(`Importing item ${i + 1} of ${parsedItems.length}...`)
@@ -256,7 +232,7 @@ export default function ImportQuestionsModal({
           throw new Error(`Failed to import item #${i + 1}: ${qError?.message}`)
         }
 
-        // Insert Choices / Correct Answers
+        // Insert Choices or Answers
         if (item.type === 'MCQ' && item.choices) {
           const choiceRows = item.choices.map((c, cIdx) => ({
             question_id: insertedQuestion.id,
@@ -293,13 +269,12 @@ export default function ImportQuestionsModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-4xl w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
-        {/* Header */}
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
-            <h2 className="text-base font-bold text-slate-900">Bulk Import & Group Questions</h2>
+            <h2 className="text-base font-bold text-slate-900">Bulk Import Test JSON</h2>
             <p className="text-xs text-slate-500">
-              Assign these questions to a designated Test Source / Collection for organized grouping.
+              Import full question sets directly into your database.
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
@@ -308,11 +283,11 @@ export default function ImportQuestionsModal({
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-          {/* Test Collection Grouping Config */}
+          {/* Collection Selection */}
           <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-purple-900 uppercase tracking-wider">
-                📁 Assign to Test Collection / Source Paper
+                📁 Assign to Test Collection
               </span>
               <div className="flex gap-2 text-xs">
                 <button
@@ -339,50 +314,46 @@ export default function ImportQuestionsModal({
             </div>
 
             {selectedSetMode === 'new' ? (
-              <div>
-                <input
-                  type="text"
-                  placeholder="e.g. EST I - Sample Test #1 (2021) or Digital SAT Test #1"
-                  value={newSetTitle}
-                  onChange={(e) => setNewSetTitle(e.target.value)}
-                  className="w-full text-xs font-semibold bg-white border border-purple-300 rounded-lg px-3 py-2"
-                />
-              </div>
+              <input
+                type="text"
+                placeholder="e.g. EST I - Sample Test #1 or Digital SAT Test #1"
+                value={newSetTitle}
+                onChange={(e) => setNewSetTitle(e.target.value)}
+                className="w-full text-xs font-semibold bg-white border border-purple-300 rounded-lg px-3 py-2"
+              />
             ) : (
-              <div>
-                <select
-                  value={selectedSetId}
-                  onChange={(e) => setSelectedSetId(e.target.value)}
-                  className="w-full text-xs font-semibold bg-white border border-purple-300 rounded-lg px-3 py-2"
-                >
-                  {existingSets.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.title}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <select
+                value={selectedSetId}
+                onChange={(e) => setSelectedSetId(e.target.value)}
+                className="w-full text-xs font-semibold bg-white border border-purple-300 rounded-lg px-3 py-2"
+              >
+                {existingSets.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
             )}
           </div>
 
-          {/* JSON Paste / File Upload Area */}
+          {/* JSON Textarea */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-slate-700">Questions JSON Data</label>
+              <label className="text-xs font-semibold text-slate-700">Questions JSON</label>
               <label className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer">
                 📁 Upload .json file
                 <input type="file" accept=".json" onChange={handleFileUpload} className="hidden" />
               </label>
             </div>
             <textarea
-              rows={7}
+              rows={8}
               value={jsonText}
               onChange={(e) => {
                 setJsonText(e.target.value)
                 validateAndExtract(e.target.value)
               }}
               className="w-full text-xs font-mono border border-slate-300 rounded-lg p-3 leading-relaxed focus:border-blue-500 focus:outline-none"
-              placeholder="Paste JSON array containing question items here..."
+              placeholder="Paste JSON array here..."
             />
           </div>
 
@@ -392,7 +363,14 @@ export default function ImportQuestionsModal({
             </p>
           )}
 
-          {/* Defaults and Preview */}
+          {parsedItems.length > 0 && !parseError && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs font-semibold text-emerald-800 flex items-center justify-between">
+              <span>✓ Valid JSON Structure</span>
+              <span>{parsedItems.length} questions parsed</span>
+            </div>
+          )}
+
+          {/* Exam & Subject Defaults */}
           <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
             <div>
               <label className="font-semibold text-slate-700 block mb-1">Target Exam Type</label>
@@ -415,7 +393,7 @@ export default function ImportQuestionsModal({
           </div>
         </div>
 
-        {/* Modal Footer */}
+        {/* Footer */}
         <div className="flex items-center justify-between pt-3 border-t border-slate-100">
           <span className="text-xs text-slate-500 font-medium">{importProgress}</span>
           <div className="flex gap-2">
@@ -433,7 +411,7 @@ export default function ImportQuestionsModal({
               disabled={importing || parsedItems.length === 0 || !!parseError}
               className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
-              {importing ? 'Importing...' : `Import ${parsedItems.length} Questions into Collection`}
+              {importing ? 'Importing...' : `Import ${parsedItems.length} Questions`}
             </button>
           </div>
         </div>
