@@ -26,14 +26,9 @@ interface RawImportItem {
   tolerance?: number
 }
 
-interface ExtractedTaxonomy {
-  exams: string[]
-  subjects: string[]
-  categories: string[]
-  chapters: string[]
-  lessons: string[]
-  skills: string[]
-  categoryCounts: Record<string, number>
+interface QuestionSetOption {
+  id: string
+  title: string
 }
 
 export default function ImportQuestionsModal({
@@ -45,34 +40,37 @@ export default function ImportQuestionsModal({
   const [parsedItems, setParsedItems] = useState<RawImportItem[]>([])
   const [parseError, setParseError] = useState<string | null>(null)
 
-  // Extracted Taxonomy directly from the uploaded JSON
-  const [extractedTaxonomy, setExtractedTaxonomy] = useState<ExtractedTaxonomy>({
-    exams: [],
-    subjects: [],
-    categories: [],
-    chapters: [],
-    lessons: [],
-    skills: [],
-    categoryCounts: {},
-  })
+  // Question Set / Collection State
+  const [existingSets, setExistingSets] = useState<QuestionSetOption[]>([])
+  const [selectedSetMode, setSelectedSetMode] = useState<'new' | 'existing'>('new')
+  const [selectedSetId, setSelectedSetId] = useState('')
+  const [newSetTitle, setNewSetTitle] = useState('')
 
   // Global Defaults / Fallbacks
   const [defaultExam, setDefaultExam] = useState('EST I')
   const [defaultSubject, setDefaultSubject] = useState('Math')
 
-  // Filter preview by detected category
   const [previewCategoryFilter, setPreviewCategoryFilter] = useState('ALL')
-
-  // Currently editing index
   const [activeEditingIdx, setActiveEditingIdx] = useState<number | null>(null)
 
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState('')
 
   useEffect(() => {
-    if (isOpen && jsonText) validateAndExtract(jsonText)
+    if (isOpen) {
+      loadQuestionSets()
+      if (jsonText) validateAndExtract(jsonText)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen])
+
+  async function loadQuestionSets() {
+    const { data } = await supabase.from('question_sets').select('id, title').order('title')
+    setExistingSets(data ?? [])
+    if (data && data.length > 0) {
+      setSelectedSetId(data[0].id)
+    }
+  }
 
   if (!isOpen) return null
 
@@ -80,15 +78,6 @@ export default function ImportQuestionsModal({
     setParseError(null)
     if (!text.trim()) {
       setParsedItems([])
-      setExtractedTaxonomy({
-        exams: [],
-        subjects: [],
-        categories: [],
-        chapters: [],
-        lessons: [],
-        skills: [],
-        categoryCounts: {},
-      })
       return
     }
 
@@ -100,25 +89,15 @@ export default function ImportQuestionsModal({
         return
       }
 
-      const examsSet = new Set<string>()
-      const subjectsSet = new Set<string>()
-      const categoriesSet = new Set<string>()
-      const chaptersSet = new Set<string>()
-      const lessonsSet = new Set<string>()
-      const skillsSet = new Set<string>()
-      const counts: Record<string, number> = {}
-
       for (let i = 0; i < data.length; i++) {
         const item = data[i]
         if (!item.question || typeof item.question !== 'string') {
-          setParseError(`Question #${i + 1} is missing a "question" text string.`)
+          setParseError(`Question #${i + 1} is missing a "question" string.`)
           setParsedItems([])
           return
         }
         if (!['MCQ', 'TRUE_FALSE', 'GRID_IN'].includes(item.type)) {
-          setParseError(
-            `Question #${i + 1} has invalid type "${item.type}". Must be MCQ, TRUE_FALSE, or GRID_IN.`
-          )
+          setParseError(`Question #${i + 1} has invalid type "${item.type}". Must be MCQ, TRUE_FALSE, or GRID_IN.`)
           setParsedItems([])
           return
         }
@@ -129,44 +108,14 @@ export default function ImportQuestionsModal({
             return
           }
           if (!item.choices.some((c: any) => c.is_correct === true)) {
-            setParseError(
-              `Question #${i + 1} (MCQ) must have at least one choice with "is_correct": true.`
-            )
+            setParseError(`Question #${i + 1} (MCQ) must have at least one choice with "is_correct": true.`)
             setParsedItems([])
             return
           }
         }
-
-        // Extract taxonomy strings from JSON
-        if (item.exam?.trim()) examsSet.add(item.exam.trim())
-        if (item.subject?.trim()) subjectsSet.add(item.subject.trim())
-        if (item.category?.trim()) {
-          const cat = item.category.trim()
-          categoriesSet.add(cat)
-          counts[cat] = (counts[cat] || 0) + 1
-        }
-        if (item.chapter?.trim()) chaptersSet.add(item.chapter.trim())
-        if (item.lesson?.trim()) lessonsSet.add(item.lesson.trim())
-        if (item.skill?.trim()) skillsSet.add(item.skill.trim())
       }
 
       setParsedItems(data)
-      setExtractedTaxonomy({
-        exams: Array.from(examsSet),
-        subjects: Array.from(subjectsSet),
-        categories: Array.from(categoriesSet),
-        chapters: Array.from(chaptersSet),
-        lessons: Array.from(lessonsSet),
-        skills: Array.from(skillsSet),
-        categoryCounts: counts,
-      })
-
-      if (examsSet.size > 0 && !defaultExam) {
-        setDefaultExam(Array.from(examsSet)[0])
-      }
-      if (subjectsSet.size > 0 && !defaultSubject) {
-        setDefaultSubject(Array.from(subjectsSet)[0])
-      }
     } catch (err: any) {
       setParseError(`Invalid JSON syntax: ${err.message}`)
       setParsedItems([])
@@ -181,26 +130,24 @@ export default function ImportQuestionsModal({
       const content = event.target?.result as string
       setJsonText(content)
       validateAndExtract(content)
+      if (!newSetTitle) {
+        setNewSetTitle(file.name.replace(/\.[^/.]+$/, ''))
+      }
     }
     reader.readAsText(file)
   }
 
-  function updateQuestionTaxonomyField(
-    idx: number,
-    field: 'category' | 'chapter' | 'lesson' | 'skill',
-    value: string
-  ) {
-    const next = [...parsedItems]
-    next[idx] = { ...next[idx], [field]: value }
-    setParsedItems(next)
-  }
+  const categoriesDetected = useMemo(() => {
+    const set = new Set<string>()
+    parsedItems.forEach((i) => {
+      if (i.category) set.add(i.category)
+    })
+    return Array.from(set)
+  }, [parsedItems])
 
-  // Filtered Preview items
   const filteredPreview = useMemo(() => {
     if (previewCategoryFilter === 'ALL') return parsedItems
-    return parsedItems.filter(
-      (item) => (item.category || 'Uncategorized') === previewCategoryFilter
-    )
+    return parsedItems.filter((i) => (i.category || 'Uncategorized') === previewCategoryFilter)
   }, [parsedItems, previewCategoryFilter])
 
   async function handleImport() {
@@ -209,9 +156,7 @@ export default function ImportQuestionsModal({
     setImportProgress('Authenticating...')
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
+      const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('You must be logged in.')
 
       const { data: profile } = await supabase
@@ -219,17 +164,36 @@ export default function ImportQuestionsModal({
         .select('organization_id')
         .eq('id', user.id)
         .single()
+
       if (!profile) throw new Error('Could not identify organization.')
 
-      // Fetch Answer Type IDs
+      // 1. Resolve or Create Question Set ID
+      let targetSetId: string | null = null
+      if (selectedSetMode === 'existing' && selectedSetId) {
+        targetSetId = selectedSetId
+      } else if (selectedSetMode === 'new' && newSetTitle.trim()) {
+        const { data: newSet, error: setError } = await supabase
+          .from('question_sets')
+          .insert({
+            organization_id: profile.organization_id,
+            title: newSetTitle.trim(),
+          })
+          .select('id')
+          .single()
+
+        if (setError) throw setError
+        targetSetId = newSet.id
+      }
+
+      // 2. Fetch Answer Type IDs
       const { data: answerTypes } = await supabase.from('answer_types').select('id, code')
       const typeMap = new Map<string, string>()
       answerTypes?.forEach((at) => typeMap.set(at.code, at.id))
 
-      // Process each question individually with its own resolved taxonomy
+      // 3. Process Questions
       for (let i = 0; i < parsedItems.length; i++) {
         const item = parsedItems[i]
-        setImportProgress(`Importing question ${i + 1} of ${parsedItems.length}...`)
+        setImportProgress(`Importing item ${i + 1} of ${parsedItems.length}...`)
 
         const typeId = typeMap.get(item.type)
         if (!typeId) throw new Error(`Unknown answer type: ${item.type}`)
@@ -245,12 +209,7 @@ export default function ImportQuestionsModal({
 
         const examName = item.exam || defaultExam || null
         const subjectName = item.subject || defaultSubject || null
-        const categoryName = item.category || null
-        const chapterName = item.chapter || null
-        const lessonName = item.lesson || null
-        const skillName = item.skill || null
 
-        // Resolve or create full 6-level taxonomy hierarchy for this specific question
         if (examName) {
           const { data: taxData, error: taxError } = await supabase.rpc(
             'resolve_or_create_taxonomy',
@@ -258,26 +217,25 @@ export default function ImportQuestionsModal({
               p_org_id: profile.organization_id,
               p_exam: examName,
               p_subject: subjectName,
-              p_category: categoryName,
-              p_chapter: chapterName,
-              p_lesson: lessonName,
-              p_skill: skillName,
+              p_category: item.category || null,
+              p_chapter: item.chapter || null,
+              p_lesson: item.lesson || null,
+              p_skill: item.skill || null,
             }
           )
-
-          if (!taxError && taxData && taxData.length > 0) {
-            taxIds = taxData[0]
-          }
+          if (!taxError && taxData && taxData.length > 0) taxIds = taxData[0]
         }
 
         const contentBlocks = parseContentText(item.question)
         const explanationBlocks = item.explanation ? parseContentText(item.explanation) : []
 
-        // 1. Insert Question Row
+        // Insert Question
         const { data: insertedQuestion, error: qError } = await supabase
           .from('questions')
           .insert({
             organization_id: profile.organization_id,
+            question_set_id: targetSetId,
+            source_item_number: i + 1,
             answer_type_id: typeId,
             content_blocks: contentBlocks,
             explanation_blocks: explanationBlocks,
@@ -298,7 +256,7 @@ export default function ImportQuestionsModal({
           throw new Error(`Failed to import item #${i + 1}: ${qError?.message}`)
         }
 
-        // 2. Insert Choices or Correct Answer Rows
+        // Insert Choices / Correct Answers
         if (item.type === 'MCQ' && item.choices) {
           const choiceRows = item.choices.map((c, cIdx) => ({
             question_id: insertedQuestion.id,
@@ -307,23 +265,20 @@ export default function ImportQuestionsModal({
             display_order: cIdx,
           }))
           const { error: cError } = await supabase.from('question_choices').insert(choiceRows)
-          if (cError) throw new Error(`Failed to save choices for #${i + 1}: ${cError.message}`)
+          if (cError) throw cError
         } else if (item.type === 'TRUE_FALSE') {
-          const { error: tfError } = await supabase.from('question_correct_answers').insert({
+          await supabase.from('question_correct_answers').insert({
             question_id: insertedQuestion.id,
             answer_data: { value: Boolean(item.correct_answer) },
           })
-          if (tfError) throw new Error(`Failed to save answer for #${i + 1}: ${tfError.message}`)
         } else if (item.type === 'GRID_IN') {
-          const { error: giError } = await supabase.from('question_correct_answers').insert({
+          await supabase.from('question_correct_answers').insert({
             question_id: insertedQuestion.id,
             answer_data: {
               value: Number(item.correct_answer),
               tolerance: item.tolerance ? Number(item.tolerance) : 0,
             },
           })
-          if (giError)
-            throw new Error(`Failed to save numeric answer for #${i + 1}: ${giError.message}`)
         }
       }
 
@@ -342,9 +297,9 @@ export default function ImportQuestionsModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-3">
           <div>
-            <h2 className="text-base font-bold text-slate-900">Bulk Import Questions from JSON</h2>
+            <h2 className="text-base font-bold text-slate-900">Bulk Import & Group Questions</h2>
             <p className="text-xs text-slate-500">
-              Categories, Chapters, Lessons, and Skills are automatically parsed into dropdowns.
+              Assign these questions to a designated Test Source / Collection for organized grouping.
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1">
@@ -353,10 +308,67 @@ export default function ImportQuestionsModal({
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-4 pr-1">
-          {/* JSON Paste / Upload Area */}
+          {/* Test Collection Grouping Config */}
+          <div className="p-4 bg-purple-50/70 border border-purple-200 rounded-xl space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-purple-900 uppercase tracking-wider">
+                📁 Assign to Test Collection / Source Paper
+              </span>
+              <div className="flex gap-2 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setSelectedSetMode('new')}
+                  className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                    selectedSetMode === 'new' ? 'bg-purple-700 text-white' : 'bg-white text-purple-700'
+                  }`}
+                >
+                  + New Test Set
+                </button>
+                {existingSets.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSetMode('existing')}
+                    className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                      selectedSetMode === 'existing' ? 'bg-purple-700 text-white' : 'bg-white text-purple-700'
+                    }`}
+                  >
+                    Existing Test Set
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {selectedSetMode === 'new' ? (
+              <div>
+                <input
+                  type="text"
+                  placeholder="e.g. EST I - Sample Test #1 (2021) or Digital SAT Test #1"
+                  value={newSetTitle}
+                  onChange={(e) => setNewSetTitle(e.target.value)}
+                  className="w-full text-xs font-semibold bg-white border border-purple-300 rounded-lg px-3 py-2"
+                />
+              </div>
+            ) : (
+              <div>
+                <select
+                  value={selectedSetId}
+                  onChange={(e) => setSelectedSetId(e.target.value)}
+                  className="w-full text-xs font-semibold bg-white border border-purple-300 rounded-lg px-3 py-2"
+                >
+                  {existingSets.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+
+          {/* JSON Paste / File Upload Area */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-semibold text-slate-700">JSON Input</label>
+              <label className="text-xs font-semibold text-slate-700">Questions JSON Data</label>
               <label className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer">
                 📁 Upload .json file
                 <input type="file" accept=".json" onChange={handleFileUpload} className="hidden" />
@@ -370,7 +382,7 @@ export default function ImportQuestionsModal({
                 validateAndExtract(e.target.value)
               }}
               className="w-full text-xs font-mono border border-slate-300 rounded-lg p-3 leading-relaxed focus:border-blue-500 focus:outline-none"
-              placeholder="Paste the JSON array containing questions and taxonomy here..."
+              placeholder="Paste JSON array containing question items here..."
             />
           </div>
 
@@ -380,280 +392,27 @@ export default function ImportQuestionsModal({
             </p>
           )}
 
-          {/* Extracted Taxonomy Summary Banner */}
-          {parsedItems.length > 0 && !parseError && (
-            <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-blue-900 uppercase tracking-wider">
-                  📦 Automatically Detected in this JSON:
-                </span>
-                <span className="text-xs font-semibold text-blue-700">
-                  {parsedItems.length} Total Questions
-                </span>
-              </div>
-
-              {/* Detected Domains Pills */}
-              <div className="flex flex-wrap gap-2 pt-1">
-                {extractedTaxonomy.categories.map((cat) => (
-                  <span
-                    key={cat}
-                    className="bg-white border border-blue-200 text-blue-800 font-bold text-xs px-2.5 py-1 rounded-lg shadow-2xs flex items-center gap-1.5"
-                  >
-                    <span>📁</span> {cat}
-                    <span className="bg-blue-100 text-blue-900 px-1.5 py-0.2 rounded-full text-[11px]">
-                      {extractedTaxonomy.categoryCounts[cat] || 0}
-                    </span>
-                  </span>
-                ))}
-              </div>
-
-              <div className="text-[11px] text-blue-700 flex flex-wrap gap-4 pt-1 font-medium">
-                <span>📖 {extractedTaxonomy.chapters.length} Unique Chapters</span>
-                <span>📝 {extractedTaxonomy.lessons.length} Unique Lessons</span>
-                <span>🎯 {extractedTaxonomy.skills.length} Unique Skills</span>
-              </div>
-            </div>
-          )}
-
-          {/* Target Exam Fallback Configuration */}
+          {/* Defaults and Preview */}
           <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs">
             <div>
-              <label className="font-semibold text-slate-700 block mb-1">
-                Default Target Exam
-              </label>
+              <label className="font-semibold text-slate-700 block mb-1">Target Exam Type</label>
               <input
                 type="text"
                 value={defaultExam}
                 onChange={(e) => setDefaultExam(e.target.value)}
-                placeholder="e.g. EST I, SAT, or ACT"
                 className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5"
               />
             </div>
             <div>
-              <label className="font-semibold text-slate-700 block mb-1">
-                Default Subject
-              </label>
+              <label className="font-semibold text-slate-700 block mb-1">Subject</label>
               <input
                 type="text"
                 value={defaultSubject}
                 onChange={(e) => setDefaultSubject(e.target.value)}
-                placeholder="e.g. Math"
                 className="w-full bg-white border border-slate-300 rounded px-2.5 py-1.5"
               />
             </div>
           </div>
-
-          {/* Interactive Question Preview List with JSON-Populated Dropdowns */}
-          {parsedItems.length > 0 && !parseError && (
-            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/40 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                  Question Preview ({filteredPreview.length} items shown)
-                </h3>
-
-                {/* Filter Preview by Category Dropdown */}
-                {extractedTaxonomy.categories.length > 1 && (
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-slate-500 font-medium">Filter Preview:</span>
-                    <select
-                      value={previewCategoryFilter}
-                      onChange={(e) => setPreviewCategoryFilter(e.target.value)}
-                      className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 font-semibold text-slate-800"
-                    >
-                      <option value="ALL">Show All Categories ({parsedItems.length})</option>
-                      {extractedTaxonomy.categories.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat} ({extractedTaxonomy.categoryCounts[cat] || 0})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                {filteredPreview.map((item) => {
-                  const originalIndex = parsedItems.indexOf(item)
-
-                  return (
-                    <div
-                      key={originalIndex}
-                      className="bg-white border border-slate-200 rounded-xl p-4 text-xs space-y-2.5 shadow-2xs"
-                    >
-                      <div className="flex items-center justify-between gap-2 flex-wrap pb-2 border-b border-slate-100">
-                        <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-slate-900">
-                            #{originalIndex + 1}
-                          </span>
-                          <span className="bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded">
-                            {item.type}
-                          </span>
-                          <span className="capitalize text-slate-500">
-                            {item.difficulty || 'medium'} &middot; {item.points || 1} pt
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setActiveEditingIdx(
-                              activeEditingIdx === originalIndex ? null : originalIndex
-                            )
-                          }
-                          className="text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 font-semibold px-2.5 py-1 rounded-md"
-                        >
-                          {activeEditingIdx === originalIndex
-                            ? 'Close Dropdown Editor'
-                            : '✏️ Edit Classification'}
-                        </button>
-                      </div>
-
-                      {/* Question Content */}
-                      <div className="text-slate-900 font-medium">
-                        <ContentBlockRenderer blocks={parseContentText(item.question)} />
-                      </div>
-
-                      {/* Individual Taxonomy Badges */}
-                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] pt-1">
-                        <span className="text-slate-400 font-semibold">Tags:</span>
-                        {item.category && (
-                          <span className="bg-blue-50 text-blue-700 border border-blue-200 font-bold px-2 py-0.5 rounded">
-                            📁 {item.category}
-                          </span>
-                        )}
-                        {item.chapter && (
-                          <span className="bg-purple-50 text-purple-700 border border-purple-200 font-medium px-2 py-0.5 rounded">
-                            📖 {item.chapter}
-                          </span>
-                        )}
-                        {item.lesson && (
-                          <span className="bg-amber-50 text-amber-800 border border-amber-200 font-medium px-2 py-0.5 rounded">
-                            📝 {item.lesson}
-                          </span>
-                        )}
-                        {item.skill && (
-                          <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold px-2 py-0.5 rounded">
-                            🎯 {item.skill}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Dropdown Menu Editor Populated from the JSON */}
-                      {activeEditingIdx === originalIndex && (
-                        <div className="mt-3 p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
-                          <span className="font-bold text-blue-900 text-xs block">
-                            Select or Change Classification for Question #{originalIndex + 1}:
-                          </span>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {/* Category Dropdown */}
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Domain / Category
-                              </label>
-                              <select
-                                value={item.category || ''}
-                                onChange={(e) =>
-                                  updateQuestionTaxonomyField(
-                                    originalIndex,
-                                    'category',
-                                    e.target.value
-                                  )
-                                }
-                                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-xs font-semibold"
-                              >
-                                <option value="">— None —</option>
-                                {extractedTaxonomy.categories.map((c) => (
-                                  <option key={c} value={c}>
-                                    {c}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Chapter Dropdown */}
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Chapter
-                              </label>
-                              <select
-                                value={item.chapter || ''}
-                                onChange={(e) =>
-                                  updateQuestionTaxonomyField(
-                                    originalIndex,
-                                    'chapter',
-                                    e.target.value
-                                  )
-                                }
-                                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-xs font-semibold"
-                              >
-                                <option value="">— None —</option>
-                                {extractedTaxonomy.chapters.map((ch) => (
-                                  <option key={ch} value={ch}>
-                                    {ch}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Lesson Dropdown */}
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Lesson
-                              </label>
-                              <select
-                                value={item.lesson || ''}
-                                onChange={(e) =>
-                                  updateQuestionTaxonomyField(
-                                    originalIndex,
-                                    'lesson',
-                                    e.target.value
-                                  )
-                                }
-                                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-xs font-semibold"
-                              >
-                                <option value="">— None —</option>
-                                {extractedTaxonomy.lessons.map((l) => (
-                                  <option key={l} value={l}>
-                                    {l}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Skill Dropdown / Input */}
-                            <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Skill
-                              </label>
-                              <select
-                                value={item.skill || ''}
-                                onChange={(e) =>
-                                  updateQuestionTaxonomyField(
-                                    originalIndex,
-                                    'skill',
-                                    e.target.value
-                                  )
-                                }
-                                className="w-full bg-white border border-slate-300 rounded px-2 py-1.5 text-xs font-semibold"
-                              >
-                                <option value="">— None —</option>
-                                {extractedTaxonomy.skills.map((s) => (
-                                  <option key={s} value={s}>
-                                    {s}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Modal Footer */}
@@ -674,7 +433,7 @@ export default function ImportQuestionsModal({
               disabled={importing || parsedItems.length === 0 || !!parseError}
               className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50"
             >
-              {importing ? 'Importing...' : `Import ${parsedItems.length} Questions`}
+              {importing ? 'Importing...' : `Import ${parsedItems.length} Questions into Collection`}
             </button>
           </div>
         </div>

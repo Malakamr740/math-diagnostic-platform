@@ -28,7 +28,17 @@ interface OverallResult {
   percentage: number
   calculated_at: string
   avg_time_per_question: number
+  avg_time_correct: number
+  avg_time_incorrect: number
+  rushed_mistakes_count: number
+  timesink_mistakes_count: number
   level: LevelInfo | null
+}
+
+interface DiagnosticNote {
+  type: 'warning' | 'caution' | 'critical' | 'success' | 'strength' | 'priority'
+  title: string
+  body: string
 }
 
 interface BreakdownRow {
@@ -41,6 +51,7 @@ interface BreakdownRow {
   points_possible: number
   percentage: number
   classification: 'strong' | 'weak' | 'average' | null
+  avg_time_seconds?: number
 }
 
 interface ChoiceOption {
@@ -88,14 +99,15 @@ interface OrgSettings {
 interface ReportData {
   student_info: StudentInfo
   overall: OverallResult
+  diagnostic_notes: DiagnosticNote[]
   breakdowns: BreakdownRow[]
   questions: QuestionReviewItem[]
   courses: CourseItem[]
   org_settings: OrgSettings | null
 }
 
-type TabKey = 'overview' | 'skills' | 'questions' | 'action_plan'
-type QuestionFilter = 'all' | 'incorrect' | 'hard' | 'slow'
+type TabKey = 'executive' | 'behavior' | 'matrix' | 'questions' | 'action_plan'
+type QuestionFilter = 'all' | 'incorrect' | 'rushed' | 'timesink' | 'hard'
 
 export default function ReportPage() {
   const { attemptId } = useParams<{ attemptId: string }>()
@@ -105,7 +117,7 @@ export default function ReportPage() {
   const [report, setReport] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(true)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<TabKey>('overview')
+  const [activeTab, setActiveTab] = useState<TabKey>('executive')
   const [questionFilter, setQuestionFilter] = useState<QuestionFilter>('all')
   const [copiedLink, setCopiedLink] = useState(false)
 
@@ -125,8 +137,8 @@ export default function ReportPage() {
       if (error || !data) {
         setErrorMessage(
           error?.message?.includes('not yet available')
-            ? 'Your results are currently being calculated. Please refresh in a few moments.'
-            : 'This diagnostic report link is invalid or expired.'
+            ? 'Your diagnostic assessment results are currently compiling. Please refresh.'
+            : 'Diagnostic report not found or expired.'
         )
         setLoading(false)
         return
@@ -150,7 +162,7 @@ export default function ReportPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="text-center space-y-3">
           <div className="w-10 h-10 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm font-semibold text-slate-700">Compiling Diagnostic Report...</p>
+          <p className="text-sm font-semibold text-slate-700">Synthesizing Diagnostic Analytics...</p>
         </div>
       </div>
     )
@@ -161,56 +173,62 @@ export default function ReportPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <div className="bg-white border border-red-200 rounded-2xl p-6 max-w-md w-full text-center shadow-xs">
           <span className="text-3xl mb-2 block">⚠️</span>
-          <h2 className="text-lg font-bold text-slate-900 mb-1">Report Unavailable</h2>
+          <h2 className="text-lg font-bold text-slate-900 mb-1">Diagnostic Report Unavailable</h2>
           <p className="text-xs text-red-600 mb-4">{errorMessage}</p>
           <a
             href="/"
             className="inline-block text-xs bg-slate-800 text-white font-semibold px-4 py-2 rounded-lg"
           >
-            Return to Home
+            Return to Assessment Home
           </a>
         </div>
       </div>
     )
   }
 
-  const { student_info, overall, breakdowns, questions, courses, org_settings } = report
+  const { student_info, overall, diagnostic_notes, breakdowns, questions, courses, org_settings } = report
 
-  // Filter Breakdowns
   const categoryBreakdowns = breakdowns.filter((b) => b.type === 'category')
   const skillBreakdowns = breakdowns.filter((b) => b.type === 'skill')
   const difficultyBreakdowns = breakdowns.filter((b) => b.type === 'difficulty')
 
-  // Student display name
   const studentName =
     student_info.registration_responses['full_name'] ||
     student_info.registration_responses['name'] ||
-    'Student'
+    'Candidate'
 
-  // Time formatters
   const totalMinutes = Math.floor(student_info.total_time_seconds / 60)
   const totalSeconds = student_info.total_time_seconds % 60
 
-  // Filtered Questions
+  const weakSkills = skillBreakdowns.filter((s) => s.classification === 'weak')
+  const averageSkills = skillBreakdowns.filter((s) => s.classification === 'average')
+  const strongSkills = skillBreakdowns.filter((s) => s.classification === 'strong')
+
   const filteredQuestions = questions.filter((q) => {
     if (questionFilter === 'incorrect') return !q.is_correct
+    if (questionFilter === 'rushed') return !q.is_correct && q.time_spent_seconds < 25
+    if (questionFilter === 'timesink') return !q.is_correct && q.time_spent_seconds >= 100
     if (questionFilter === 'hard') return q.difficulty === 'hard'
-    if (questionFilter === 'slow') return q.time_spent_seconds >= 120
     return true
   })
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-900 font-sans pb-16">
-      {/* Top Header & Actions */}
+      {/* Sticky Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-20 print:static">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold uppercase tracking-wider text-blue-600 block">
-              {org_settings?.org_name || 'Academic Diagnostic'}
-            </span>
-            <h1 className="text-base sm:text-lg font-extrabold text-slate-900 leading-tight">
-              Evaluation & Diagnostic Report
-            </h1>
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 text-white font-bold flex items-center justify-center text-sm shadow-xs">
+              📊
+            </div>
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 block">
+                {org_settings?.org_name || 'Academic Diagnostic Center'}
+              </span>
+              <h1 className="text-base sm:text-lg font-black text-slate-900 leading-tight">
+                Comprehensive Diagnostic Analysis
+              </h1>
+            </div>
           </div>
 
           <div className="flex items-center gap-2 print:hidden">
@@ -218,145 +236,79 @@ export default function ReportPage() {
               onClick={handleCopyShare}
               className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-lg transition"
             >
-              {copiedLink ? '✓ Link Copied' : '🔗 Share'}
+              {copiedLink ? '✓ Copied' : '🔗 Share Link'}
             </button>
             <button
               onClick={() => window.print()}
               className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition flex items-center gap-1.5 shadow-xs"
             >
-              <span>🖨️</span> Print / Save PDF
+              <span>🖨️</span> Save Official PDF
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
-        {/* Section 1: Student Profile Snapshot */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+        {/* Candidate Profile Banner */}
         <section className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-black text-xl flex items-center justify-center shadow-xs">
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-700 text-white font-black text-2xl flex items-center justify-center shadow-xs">
                 {studentName.charAt(0).toUpperCase()}
               </div>
               <div>
-                <h2 className="text-xl font-black text-slate-900">{studentName}</h2>
-                <p className="text-xs text-slate-500 font-medium">{student_info.assessment_name}</p>
+                <h2 className="text-2xl font-black text-slate-900">{studentName}</h2>
+                <p className="text-xs font-semibold text-slate-500">
+                  Target Exam: <span className="text-slate-800">{student_info.assessment_name}</span>
+                </p>
               </div>
             </div>
 
-            {/* Registration pills */}
             <div className="flex flex-wrap gap-2 mt-4 text-xs">
               {Object.entries(student_info.registration_responses).map(([key, val]) => (
                 <span
                   key={key}
-                  className="bg-slate-50 border border-slate-200 text-slate-600 px-2.5 py-1 rounded-md"
+                  className="bg-slate-50 border border-slate-200 text-slate-600 px-2.5 py-1 rounded-lg"
                 >
-                  <strong className="capitalize text-slate-700">{key.replace('_', ' ')}:</strong>{' '}
-                  {val}
+                  <strong className="capitalize text-slate-700">{key.replace('_', ' ')}:</strong> {val}
                 </span>
               ))}
             </div>
           </div>
 
           <div className="flex sm:grid sm:grid-cols-3 gap-3 border-t md:border-t-0 md:border-l border-slate-100 pt-4 md:pt-0 md:pl-6 shrink-0">
-            <div className="text-center p-2 rounded-xl bg-slate-50 border border-slate-100 min-w-[90px]">
-              <span className="text-[11px] font-bold text-slate-400 uppercase">Test Date</span>
-              <p className="text-xs font-bold text-slate-800 mt-0.5">
+            <div className="text-center p-3 rounded-xl bg-slate-50 border border-slate-100 min-w-[95px]">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Test Date</span>
+              <p className="text-xs font-bold text-slate-800 mt-1">
                 {student_info.completed_at
                   ? new Date(student_info.completed_at).toLocaleDateString()
                   : 'Today'}
               </p>
             </div>
-            <div className="text-center p-2 rounded-xl bg-slate-50 border border-slate-100 min-w-[90px]">
-              <span className="text-[11px] font-bold text-slate-400 uppercase">Time Spent</span>
-              <p className="text-xs font-bold text-slate-800 mt-0.5">
+            <div className="text-center p-3 rounded-xl bg-slate-50 border border-slate-100 min-w-[95px]">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Test Pacing</span>
+              <p className="text-xs font-bold text-slate-800 mt-1 font-mono">
                 {totalMinutes}m {totalSeconds}s
               </p>
             </div>
-            <div className="text-center p-2 rounded-xl bg-blue-50 border border-blue-100 min-w-[90px]">
-              <span className="text-[11px] font-bold text-blue-600 uppercase">Readiness</span>
-              <p className="text-xs font-bold text-blue-900 mt-0.5">
-                {overall.level?.name || 'Assessed'}
+            <div className="text-center p-3 rounded-xl bg-blue-50 border border-blue-200 min-w-[95px]">
+              <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Readiness Tier</span>
+              <p className="text-xs font-black text-blue-900 mt-1 truncate">
+                {overall.level?.name || 'Evaluated'}
               </p>
             </div>
           </div>
         </section>
 
-        {/* Section 2: Executive Scorecard & Level Evaluation */}
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-6">
-          {/* Scorecard Hero */}
-          <div className="md:col-span-5 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl p-6 flex flex-col justify-between shadow-xs">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                Diagnostic Accuracy
-              </span>
-              <div className="flex items-baseline gap-2 mt-2">
-                <span className="text-6xl font-black tracking-tight">{overall.percentage}%</span>
-                <span className="text-sm text-slate-400 font-medium">overall score</span>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-6 border-t border-slate-700/60 mt-6">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Points Achieved:</span>
-                <span className="font-bold text-slate-100">
-                  {overall.points_earned} / {overall.points_possible} pts
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Accuracy Breakdown:</span>
-                <span className="font-bold text-slate-100">
-                  <span className="text-emerald-400">{overall.correct_count} Correct</span> &middot;{' '}
-                  <span className="text-rose-400">{overall.incorrect_count} Incorrect</span>
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-400">Average Pacing:</span>
-                <span className="font-bold text-slate-100">
-                  ⏱ {overall.avg_time_per_question}s / question
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Level Narrative & Evaluation */}
-          <div className="md:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs">
-            <div>
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <span className="text-xs font-extrabold uppercase tracking-wider text-blue-600 bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-full">
-                  Assigned Tier: {overall.level?.name || 'Evaluated'}
-                </span>
-              </div>
-              <h3 className="text-lg font-black text-slate-900 mt-2">
-                Baseline Performance Evaluation
-              </h3>
-              <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-                {overall.level?.description ||
-                  'Your performance has been evaluated across key test dimensions.'}
-              </p>
-            </div>
-
-            {overall.level?.recommendation && (
-              <div className="mt-4 p-4 rounded-xl bg-amber-50/80 border border-amber-200/80">
-                <span className="text-xs font-bold text-amber-900 block mb-1">
-                  🎯 Targeted Instructor Recommendation:
-                </span>
-                <p className="text-xs text-amber-800 leading-relaxed font-medium">
-                  {overall.level.recommendation}
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
-
-        {/* Tab Navigation (Interactive on screen, fully visible on print) */}
+        {/* Tab Navigation */}
         <div className="border-b border-slate-200 flex gap-2 overflow-x-auto print:hidden">
           {(
             [
-              { key: 'overview', label: '📊 Domains & Difficulty' },
-              { key: 'skills', label: '🎯 Granular Skill Matrix' },
-              { key: 'questions', label: `📝 Question Review (${questions.length})` },
-              { key: 'action_plan', label: '🚀 Recommended Action Plan' },
+              { key: 'executive', label: '🎯 Executive Summary & Notes' },
+              { key: 'behavior', label: '⏱ Behavioral Pacing & Traps' },
+              { key: 'matrix', label: '📊 Domain & Skill Matrix' },
+              { key: 'questions', label: `📝 Itemized Solutions (${questions.length})` },
+              { key: 'action_plan', label: '🚀 Prescribed Action Plan' },
             ] as const
           ).map((tab) => (
             <button
@@ -374,113 +326,198 @@ export default function ReportPage() {
         </div>
 
         {/* ========================================================= */}
-        {/* TAB 1: DOMAINS, CATEGORIES & DIFFICULTY */}
+        {/* TAB 1: EXECUTIVE SUMMARY & PEDAGOGICAL NOTES */}
         {/* ========================================================= */}
-        {(activeTab === 'overview' || typeof window === 'undefined') && (
+        {(activeTab === 'executive' || typeof window === 'undefined') && (
           <div className="space-y-6">
-            {/* Domain Mastery Bars */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-              <h3 className="text-base font-bold text-slate-900 mb-1">Domain & Category Mastery</h3>
-              <p className="text-xs text-slate-500 mb-5">
-                Evaluation across the primary subject domains evaluated in this test.
-              </p>
+            {/* High Impact Metric Row */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
+              {/* Scorecard Hero */}
+              <div className="md:col-span-5 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white rounded-2xl p-6 flex flex-col justify-between shadow-xs">
+                <div>
+                  <span className="text-[11px] font-black uppercase tracking-wider text-blue-400">
+                    Calculated Accuracy
+                  </span>
+                  <div className="flex items-baseline gap-2 mt-2">
+                    <span className="text-6xl font-black tracking-tight">{overall.percentage}%</span>
+                    <span className="text-xs text-slate-400 font-medium">overall score</span>
+                  </div>
+                </div>
 
-              <div className="space-y-4">
-                {categoryBreakdowns.length === 0 ? (
-                  <p className="text-xs text-slate-400 py-3">No category taxonomy tags assigned.</p>
-                ) : (
-                  categoryBreakdowns.map((cat) => (
-                    <div key={cat.label} className="space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-bold">
-                        <span className="text-slate-800">{cat.label}</span>
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-500 font-medium">
-                            {cat.correct_count}/{cat.total_questions} correct
-                          </span>
-                          <span
-                            className={`px-2 py-0.5 rounded-md capitalize text-[11px] ${
-                              cat.classification === 'strong'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : cat.classification === 'weak'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {cat.percentage}% &middot; {cat.classification || 'average'}
-                          </span>
-                        </div>
-                      </div>
+                <div className="space-y-3 pt-6 border-t border-slate-700/60 mt-6 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Points Achieved:</span>
+                    <span className="font-bold text-slate-100">
+                      {overall.points_earned} / {overall.points_possible} pts
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Item Breakdown:</span>
+                    <span className="font-bold text-slate-100">
+                      <span className="text-emerald-400">{overall.correct_count} Correct</span> &middot;{' '}
+                      <span className="text-rose-400">{overall.incorrect_count} Incorrect</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Average Pacing:</span>
+                    <span className="font-bold text-slate-100 font-mono">
+                      ⏱ {overall.avg_time_per_question}s / question
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-                      {/* Progress bar */}
-                      <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            cat.classification === 'strong'
-                              ? 'bg-emerald-500'
-                              : cat.classification === 'weak'
-                              ? 'bg-rose-500'
-                              : 'bg-amber-500'
-                          }`}
-                          style={{ width: `${Math.max(5, cat.percentage)}%` }}
-                        />
-                      </div>
-                    </div>
-                  ))
+              {/* Readiness Tier Description */}
+              <div className="md:col-span-7 bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-blue-600 bg-blue-50 border border-blue-200 px-3 py-1 rounded-full">
+                      Placement: {overall.level?.name || 'Evaluated'}
+                    </span>
+                  </div>
+                  <h3 className="text-lg font-black text-slate-900 mt-2">
+                    Baseline Performance Appraisal
+                  </h3>
+                  <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+                    {overall.level?.description ||
+                      'The diagnostic evaluation models readiness across core and advanced mathematics.'}
+                  </p>
+                </div>
+
+                {overall.level?.recommendation && (
+                  <div className="mt-4 p-4 rounded-xl bg-amber-50/80 border border-amber-200/80">
+                    <span className="text-xs font-bold text-amber-900 block mb-1">
+                      🎯 Targeted Instructor Prescription:
+                    </span>
+                    <p className="text-xs text-amber-800 leading-relaxed font-medium">
+                      {overall.level.recommendation}
+                    </p>
+                  </div>
                 )}
               </div>
             </div>
 
-            {/* Cognitive & Difficulty Breakdown */}
-            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
-              <h3 className="text-base font-bold text-slate-900 mb-1">
-                Cognitive Depth & Question Difficulty Analysis
-              </h3>
-              <p className="text-xs text-slate-500 mb-5">
-                Reveals whether points were lost on foundational traps or challenging multi-step
-                problems.
-              </p>
+            {/* Algorithmic Diagnostic Insights Notes */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  Automated Pedagogical Notes & Behavioral Insights
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Synthesized observations based on your answer speeds, error patterns, and difficulty curves.
+                </p>
+              </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+                {diagnostic_notes && diagnostic_notes.length > 0 ? (
+                  diagnostic_notes.map((note, idx) => (
+                    <div
+                      key={idx}
+                      className={`p-4 rounded-xl border text-xs space-y-1 ${
+                        note.type === 'critical'
+                          ? 'bg-rose-50/70 border-rose-200 text-rose-900'
+                          : note.type === 'caution' || note.type === 'warning'
+                          ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                          : note.type === 'priority'
+                          ? 'bg-blue-50/70 border-blue-200 text-blue-900'
+                          : 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                      }`}
+                    >
+                      <span className="font-black text-[11px] uppercase tracking-wider block">
+                        {note.type === 'critical' && '🚨 '}
+                        {note.type === 'warning' && '⚡ '}
+                        {note.type === 'caution' && '⏱ '}
+                        {note.type === 'priority' && '🎯 '}
+                        {note.type === 'strength' && '🌟 '}
+                        {note.type === 'success' && '✓ '}
+                        {note.title}
+                      </span>
+                      <p className="leading-relaxed font-medium">{note.body}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-slate-400 py-4 col-span-2 text-center">
+                    No anomalies detected during test execution.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 2: BEHAVIORAL PACING & TRAP ANALYSIS */}
+        {/* ========================================================= */}
+        {(activeTab === 'behavior' || typeof window === 'undefined') && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <span className="text-[11px] font-bold uppercase text-slate-400">Avg Pace (Correct)</span>
+                <p className="text-2xl font-black text-emerald-600 mt-2 font-mono">
+                  ⏱ {overall.avg_time_correct}s
+                </p>
+                <span className="text-[11px] text-slate-500 mt-1 block">Speed when solving accurately</span>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <span className="text-[11px] font-bold uppercase text-slate-400">Avg Pace (Incorrect)</span>
+                <p className="text-2xl font-black text-rose-600 mt-2 font-mono">
+                  ⏱ {overall.avg_time_incorrect}s
+                </p>
+                <span className="text-[11px] text-slate-500 mt-1 block">Time spent on questions missed</span>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <span className="text-[11px] font-bold uppercase text-amber-500">Rushed Misses</span>
+                <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                  {overall.rushed_mistakes_count}
+                </p>
+                <span className="text-[11px] text-slate-500 mt-1 block">Incorrect in &lt;25s (careless)</span>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+                <span className="text-[11px] font-bold uppercase text-rose-500">Time Traps</span>
+                <p className="text-2xl font-black text-slate-900 mt-2 font-mono">
+                  {overall.timesink_mistakes_count}
+                </p>
+                <span className="text-[11px] text-slate-500 mt-1 block">Incorrect after &gt;100s</span>
+              </div>
+            </div>
+
+            {/* Cognitive Difficulty Performance Breakdown */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+              <h3 className="text-base font-bold text-slate-900">Difficulty Curve & Cognitive Depth</h3>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {(['easy', 'medium', 'hard'] as const).map((diff) => {
-                  const data = difficultyBreakdowns.find(
-                    (d) => d.label.toLowerCase() === diff.toLowerCase()
-                  )
+                  const data = difficultyBreakdowns.find((d) => d.label.toLowerCase() === diff)
                   const count = data?.total_questions || 0
                   const correct = data?.correct_count || 0
                   const pct = data?.percentage || 0
+                  const time = data?.avg_time_seconds || 0
 
                   return (
-                    <div
-                      key={diff}
-                      className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black uppercase tracking-wider text-slate-700 capitalize">
-                            {diff} Questions
-                          </span>
-                          <span
-                            className={`text-[11px] font-bold px-2 py-0.5 rounded-full capitalize ${
-                              pct >= 75
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : pct <= 50
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {pct}%
-                          </span>
-                        </div>
-                        <p className="text-2xl font-black text-slate-900 mt-2">
-                          {correct} / {count}
-                        </p>
+                    <div key={diff} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black uppercase text-slate-700">{diff}</span>
+                        <span
+                          className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                            pct >= 75
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : pct <= 50
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {pct}%
+                        </span>
                       </div>
-
-                      <p className="text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-200">
-                        {diff === 'easy' && 'Baseline knowledge & test hygiene items.'}
-                        {diff === 'medium' && 'Standard multi-step diagnostic reasoning.'}
-                        {diff === 'hard' && 'Advanced synthesis and differentiator traps.'}
+                      <p className="text-2xl font-black text-slate-900">
+                        {correct} / {count}
                       </p>
+                      <div className="text-[11px] text-slate-500 pt-2 border-t border-slate-200 flex justify-between font-medium">
+                        <span>Pace:</span>
+                        <span className="font-mono text-slate-800">{time}s avg</span>
+                      </div>
                     </div>
                   )
                 })}
@@ -490,82 +527,139 @@ export default function ReportPage() {
         )}
 
         {/* ========================================================= */}
-        {/* TAB 2: GRANULAR SKILL MATRIX */}
+        {/* TAB 3: DOMAIN & SKILL MATRIX */}
         {/* ========================================================= */}
-        {(activeTab === 'skills' || typeof window === 'undefined') && (
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Granular Skill Mastery Matrix</h3>
-              <p className="text-xs text-slate-500">
-                Detailed breakdown by micro-skill tagged to every evaluated question.
+        {(activeTab === 'matrix' || typeof window === 'undefined') && (
+          <div className="space-y-6">
+            {/* Domain Mastery Bars */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs">
+              <h3 className="text-base font-bold text-slate-900 mb-1">Content Domain Performance</h3>
+              <p className="text-xs text-slate-500 mb-5">
+                Evaluated balance across all primary content domains in the curriculum.
               </p>
+
+              <div className="space-y-4">
+                {categoryBreakdowns.map((cat) => (
+                  <div key={cat.label} className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-bold">
+                      <span className="text-slate-800">{cat.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="text-slate-500 font-medium">
+                          {cat.correct_count}/{cat.total_questions} correct
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-md capitalize text-[11px] ${
+                            cat.classification === 'strong'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : cat.classification === 'weak'
+                              ? 'bg-rose-100 text-rose-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {cat.percentage}% &middot; {cat.classification || 'average'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          cat.classification === 'strong'
+                            ? 'bg-emerald-500'
+                            : cat.classification === 'weak'
+                            ? 'bg-rose-500'
+                            : 'bg-amber-500'
+                        }`}
+                        style={{ width: `${Math.max(5, cat.percentage)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {skillBreakdowns.length === 0 ? (
-              <p className="text-xs text-slate-400 py-6 text-center">
-                No specific skill-level tags recorded on these questions.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-400 uppercase font-semibold text-[11px]">
-                      <th className="py-2.5 px-3">Evaluated Skill</th>
-                      <th className="py-2.5 px-3 text-center">Questions</th>
-                      <th className="py-2.5 px-3 text-center">Accuracy</th>
-                      <th className="py-2.5 px-3 text-center">Mastery Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {skillBreakdowns.map((sk) => (
-                      <tr key={sk.label} className="hover:bg-slate-50/80 transition">
-                        <td className="py-3 px-3 font-semibold text-slate-800">{sk.label}</td>
-                        <td className="py-3 px-3 text-center text-slate-600">
-                          {sk.correct_count} / {sk.total_questions}
-                        </td>
-                        <td className="py-3 px-3 text-center font-bold text-slate-900">
-                          {sk.percentage}%
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <span
-                            className={`inline-block px-2.5 py-1 rounded-full font-bold text-[10px] capitalize ${
-                              sk.classification === 'strong'
-                                ? 'bg-emerald-100 text-emerald-800'
-                                : sk.classification === 'weak'
-                                ? 'bg-rose-100 text-rose-800'
-                                : 'bg-amber-100 text-amber-800'
-                            }`}
-                          >
-                            {sk.classification === 'strong'
-                              ? '🟢 Mastered'
-                              : sk.classification === 'weak'
-                              ? '🔴 Critical Gap'
-                              : '🟡 Developing'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            {/* Three-Tier Categorized Skill Breakdown */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {/* Critical Focus Areas */}
+              <div className="bg-white rounded-2xl border border-rose-200 p-5 shadow-xs space-y-3">
+                <div className="flex items-center gap-2 text-rose-700">
+                  <span className="text-lg">🔴</span>
+                  <h4 className="text-xs font-black uppercase tracking-wider">
+                    Critical Remediation ({weakSkills.length})
+                  </h4>
+                </div>
+                <div className="divide-y divide-rose-100 text-xs">
+                  {weakSkills.map((sk) => (
+                    <div key={sk.label} className="py-2.5 flex justify-between items-center">
+                      <span className="font-semibold text-slate-800 pr-2">{sk.label}</span>
+                      <span className="font-black text-rose-600 shrink-0">{sk.percentage}%</span>
+                    </div>
+                  ))}
+                  {weakSkills.length === 0 && (
+                    <p className="text-xs text-slate-400 py-3 text-center">No critical gaps identified.</p>
+                  )}
+                </div>
               </div>
-            )}
+
+              {/* Developing Competencies */}
+              <div className="bg-white rounded-2xl border border-amber-200 p-5 shadow-xs space-y-3">
+                <div className="flex items-center gap-2 text-amber-700">
+                  <span className="text-lg">🟡</span>
+                  <h4 className="text-xs font-black uppercase tracking-wider">
+                    Developing ({averageSkills.length})
+                  </h4>
+                </div>
+                <div className="divide-y divide-amber-100 text-xs">
+                  {averageSkills.map((sk) => (
+                    <div key={sk.label} className="py-2.5 flex justify-between items-center">
+                      <span className="font-semibold text-slate-800 pr-2">{sk.label}</span>
+                      <span className="font-black text-amber-600 shrink-0">{sk.percentage}%</span>
+                    </div>
+                  ))}
+                  {averageSkills.length === 0 && (
+                    <p className="text-xs text-slate-400 py-3 text-center">No developing skills.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Mastered Strengths */}
+              <div className="bg-white rounded-2xl border border-emerald-200 p-5 shadow-xs space-y-3">
+                <div className="flex items-center gap-2 text-emerald-700">
+                  <span className="text-lg">🟢</span>
+                  <h4 className="text-xs font-black uppercase tracking-wider">
+                    Mastered ({strongSkills.length})
+                  </h4>
+                </div>
+                <div className="divide-y divide-emerald-100 text-xs">
+                  {strongSkills.map((sk) => (
+                    <div key={sk.label} className="py-2.5 flex justify-between items-center">
+                      <span className="font-semibold text-slate-800 pr-2">{sk.label}</span>
+                      <span className="font-black text-emerald-600 shrink-0">{sk.percentage}%</span>
+                    </div>
+                  ))}
+                  {strongSkills.length === 0 && (
+                    <p className="text-xs text-slate-400 py-3 text-center">Practice to establish mastery.</p>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
         {/* ========================================================= */}
-        {/* TAB 3: QUESTION-BY-QUESTION REVIEW & EXPLANATIONS */}
+        {/* TAB 4: ITEMIZED QUESTION SOLUTIONS & EXPLANATIONS */}
         {/* ========================================================= */}
         {(activeTab === 'questions' || typeof window === 'undefined') && (
           <div className="space-y-4">
-            {/* Filter Buttons */}
             <div className="flex items-center justify-between gap-2 flex-wrap print:hidden">
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 {(
                   [
                     { key: 'all', label: 'All Items' },
-                    { key: 'incorrect', label: `❌ Incorrect (${overall.incorrect_count})` },
-                    { key: 'hard', label: '🔥 Hard Questions' },
-                    { key: 'slow', label: '⏱ Pacing > 2m' },
+                    { key: 'incorrect', label: `✕ Missed (${overall.incorrect_count})` },
+                    { key: 'rushed', label: `⚡ Rushed (<25s)` },
+                    { key: 'timesink', label: `⏱ Time Sink (>100s)` },
+                    { key: 'hard', label: `🔥 Hard Items` },
                   ] as const
                 ).map((f) => (
                   <button
@@ -582,160 +676,148 @@ export default function ReportPage() {
                 ))}
               </div>
               <span className="text-xs text-slate-400 font-medium">
-                Showing {filteredQuestions.length} of {questions.length}
+                Showing {filteredQuestions.length} of {questions.length} items
               </span>
             </div>
 
-            {/* Questions List */}
             <div className="space-y-4">
-              {filteredQuestions.length === 0 ? (
-                <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center">
-                  <p className="text-xs font-semibold text-slate-500">
-                    No questions matching the selected filter.
-                  </p>
-                </div>
-              ) : (
-                filteredQuestions.map((q, idx) => (
-                  <div
-                    key={q.question_id}
-                    className={`bg-white rounded-2xl border p-5 sm:p-6 shadow-xs space-y-4 transition ${
-                      q.is_correct ? 'border-slate-200' : 'border-rose-200 bg-rose-50/10'
-                    }`}
-                  >
-                    {/* Item Header */}
-                    <div className="flex items-center justify-between gap-2 flex-wrap pb-3 border-b border-slate-100">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center">
-                          {idx + 1}
-                        </span>
-                        <span
-                          className={`text-xs font-bold px-2 py-0.5 rounded-md capitalize ${
-                            q.is_correct
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}
-                        >
-                          {q.is_correct ? '✓ Correct (+1 pt)' : '✕ Incorrect (0 pts)'}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 text-xs text-slate-500">
-                        {q.skill_name && (
-                          <span className="bg-slate-100 px-2 py-0.5 rounded text-[11px] font-medium text-slate-700">
-                            {q.skill_name}
-                          </span>
-                        )}
-                        <span className="bg-slate-100 px-2 py-0.5 rounded text-[11px] font-medium capitalize">
-                          {q.difficulty}
-                        </span>
-                        <span className="bg-slate-100 px-2 py-0.5 rounded text-[11px] font-medium font-mono">
-                          ⏱ {q.time_spent_seconds}s
-                        </span>
-                      </div>
+              {filteredQuestions.map((q, idx) => (
+                <div
+                  key={q.question_id}
+                  className={`bg-white rounded-2xl border p-5 sm:p-6 shadow-xs space-y-4 transition ${
+                    q.is_correct ? 'border-slate-200' : 'border-rose-200 bg-rose-50/10'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 flex-wrap pb-3 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-full bg-slate-900 text-white font-bold text-xs flex items-center justify-center">
+                        {idx + 1}
+                      </span>
+                      <span
+                        className={`text-xs font-bold px-2 py-0.5 rounded-md capitalize ${
+                          q.is_correct ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        {q.is_correct ? '✓ Correct' : '✕ Incorrect'}
+                      </span>
                     </div>
 
-                    {/* Question Content */}
-                    <div className="text-sm font-medium text-slate-900 leading-relaxed">
-                      <ContentBlockRenderer blocks={q.content_blocks} />
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      {q.skill_name && (
+                        <span className="bg-slate-100 px-2 py-0.5 rounded text-[11px] font-medium text-slate-700">
+                          {q.skill_name}
+                        </span>
+                      )}
+                      <span className="bg-slate-100 px-2 py-0.5 rounded text-[11px] font-medium capitalize">
+                        {q.difficulty}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold ${
+                          !q.is_correct && q.time_spent_seconds >= 100
+                            ? 'bg-rose-100 text-rose-800'
+                            : !q.is_correct && q.time_spent_seconds < 25
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}
+                      >
+                        ⏱ {q.time_spent_seconds}s
+                      </span>
                     </div>
+                  </div>
 
-                    {/* Multiple Choice Review */}
-                    {q.answer_type_code === 'MCQ' && (
-                      <div className="space-y-2 pt-2">
-                        {q.choices.map((ch, cIndex) => {
-                          const isStudentSelected =
-                            q.student_answer?.choice_id === ch.id
-                          const isChoiceCorrect = ch.is_correct
+                  {/* Question Stem */}
+                  <div className="text-sm font-medium text-slate-900 leading-relaxed">
+                    <ContentBlockRenderer blocks={q.content_blocks} />
+                  </div>
 
-                          let choiceStyle = 'border-slate-200 bg-slate-50/60'
-                          if (isChoiceCorrect) {
-                            choiceStyle = 'border-emerald-500 bg-emerald-50/80 text-emerald-900 font-semibold'
-                          } else if (isStudentSelected && !isChoiceCorrect) {
-                            choiceStyle = 'border-rose-400 bg-rose-50 text-rose-900 line-through'
-                          }
+                  {/* MCQ Options */}
+                  {q.answer_type_code === 'MCQ' && (
+                    <div className="space-y-2 pt-2">
+                      {q.choices.map((ch, cIndex) => {
+                        const isStudentSelected = q.student_answer?.choice_id === ch.id
+                        const isChoiceCorrect = ch.is_correct
 
-                          return (
-                            <div
-                              key={ch.id}
-                              className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-3 ${choiceStyle}`}
-                            >
-                              <div className="flex items-center gap-2.5">
-                                <span className="font-bold w-4">{String.fromCharCode(65 + cIndex)}.</span>
-                                <div>
-                                  <ContentBlockRenderer blocks={ch.content_blocks} />
-                                </div>
-                              </div>
+                        let choiceStyle = 'border-slate-200 bg-slate-50/60'
+                        if (isChoiceCorrect) {
+                          choiceStyle = 'border-emerald-500 bg-emerald-50/80 text-emerald-900 font-semibold'
+                        } else if (isStudentSelected && !isChoiceCorrect) {
+                          choiceStyle = 'border-rose-400 bg-rose-50 text-rose-900 line-through'
+                        }
 
-                              <div className="shrink-0 flex items-center gap-1.5 font-bold text-[11px]">
-                                {isChoiceCorrect && (
-                                  <span className="text-emerald-700">✓ Correct Answer</span>
-                                )}
-                                {isStudentSelected && !isChoiceCorrect && (
-                                  <span className="text-rose-600">✕ Your Answer</span>
-                                )}
+                        return (
+                          <div
+                            key={ch.id}
+                            className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-3 ${choiceStyle}`}
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className="font-bold w-4">{String.fromCharCode(65 + cIndex)}.</span>
+                              <div>
+                                <ContentBlockRenderer blocks={ch.content_blocks} />
                               </div>
                             </div>
-                          )
-                        })}
-                      </div>
-                    )}
 
-                    {/* Grid-In / True-False Review */}
-                    {q.answer_type_code !== 'MCQ' && (
-                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
+                            <div className="shrink-0 flex items-center gap-1.5 font-bold text-[11px]">
+                              {isChoiceCorrect && <span className="text-emerald-700">✓ Correct Answer</span>}
+                              {isStudentSelected && !isChoiceCorrect && (
+                                <span className="text-rose-600">✕ Selected Answer</span>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+
+                  {/* Grid-In Numeric */}
+                  {q.answer_type_code !== 'MCQ' && (
+                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs space-y-1">
+                      <p>
+                        <strong className="text-slate-700">Your Input:</strong>{' '}
+                        <span className={`font-bold ${q.is_correct ? 'text-emerald-700' : 'text-rose-600'}`}>
+                          {String(q.student_answer?.value ?? 'Unanswered')}
+                        </span>
+                      </p>
+                      {!q.is_correct && q.correct_answer_data && (
                         <p>
-                          <strong className="text-slate-700">Your Answer:</strong>{' '}
-                          <span
-                            className={`font-bold ${
-                              q.is_correct ? 'text-emerald-700' : 'text-rose-600'
-                            }`}
-                          >
-                            {String(q.student_answer?.value ?? 'None')}
+                          <strong className="text-slate-700">Official Correct Answer:</strong>{' '}
+                          <span className="font-bold text-emerald-700">
+                            {String(q.correct_answer_data.value)}
                           </span>
                         </p>
-                        {!q.is_correct && q.correct_answer_data && (
-                          <p>
-                            <strong className="text-slate-700">Correct Answer:</strong>{' '}
-                            <span className="font-bold text-emerald-700">
-                              {String(q.correct_answer_data.value)}
-                            </span>
-                          </p>
-                        )}
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  )}
 
-                    {/* Step-by-Step Explanation */}
-                    {q.explanation_blocks && q.explanation_blocks.length > 0 && (
-                      <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-100 text-xs text-slate-800 space-y-1.5">
-                        <span className="font-bold text-blue-900 block uppercase tracking-wider text-[10px]">
-                          💡 Step-by-Step Instructor Solution
-                        </span>
-                        <div className="leading-relaxed">
-                          <ContentBlockRenderer blocks={q.explanation_blocks} />
-                        </div>
+                  {/* Step-by-Step Instructor Solution */}
+                  {q.explanation_blocks && q.explanation_blocks.length > 0 && (
+                    <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-100 text-xs text-slate-800 space-y-1.5">
+                      <span className="font-bold text-blue-900 block uppercase tracking-wider text-[10px]">
+                        💡 Step-by-Step Instructor Solution
+                      </span>
+                      <div className="leading-relaxed">
+                        <ContentBlockRenderer blocks={q.explanation_blocks} />
                       </div>
-                    )}
-                  </div>
-                ))
-              )}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
         )}
 
         {/* ========================================================= */}
-        {/* TAB 4: RECOMMENDED ACTION PLAN & NEXT STEPS */}
+        {/* TAB 5: RECOMMENDED ACTION PLAN & NEXT STEPS */}
         {/* ========================================================= */}
         {(activeTab === 'action_plan' || typeof window === 'undefined') && (
           <div className="space-y-6">
-            {/* Recommended Courses Card */}
             {courses.length > 0 && (
               <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
                 <div>
                   <h3 className="text-base font-bold text-slate-900">
-                    Recommended Learning Paths for {overall.level?.name || 'Your Tier'}
+                    Curated Courses for {overall.level?.name || 'Your Readiness Tier'}
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Curated courses and bootcamps targeting the exact skill gaps identified in this test.
+                    Courses and masterclasses calibrated directly to your evaluated skill gaps.
                   </p>
                 </div>
 
@@ -748,9 +830,7 @@ export default function ReportPage() {
                       <div>
                         <h4 className="font-bold text-sm text-slate-900">{c.name}</h4>
                         {c.description && (
-                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                            {c.description}
-                          </p>
+                          <p className="text-xs text-slate-600 mt-1 leading-relaxed">{c.description}</p>
                         )}
                       </div>
 
@@ -760,9 +840,9 @@ export default function ReportPage() {
                             href={c.registration_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-1.5 rounded-lg transition"
+                            className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3.5 py-2 rounded-lg transition"
                           >
-                            Enroll Now
+                            Enroll in Course →
                           </a>
                         )}
                         {c.whatsapp_url && (
@@ -770,9 +850,9 @@ export default function ReportPage() {
                             href={c.whatsapp_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3 py-1.5 rounded-lg transition flex items-center gap-1"
+                            className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-3.5 py-2 rounded-lg transition flex items-center gap-1"
                           >
-                            <span>💬</span> WhatsApp
+                            <span>💬</span> WhatsApp Inquiry
                           </a>
                         )}
                       </div>
@@ -785,10 +865,9 @@ export default function ReportPage() {
             {/* Academic Consultation CTA */}
             <div className="bg-gradient-to-r from-blue-700 to-indigo-700 text-white rounded-2xl p-6 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-6">
               <div>
-                <h3 className="text-lg font-bold">Have Questions About Your Diagnostic Results?</h3>
-                <p className="text-xs text-blue-100 mt-1 max-w-md">
-                  Book an academic consultation with an instructor to review your mistakes and build
-                  a personalized study schedule.
+                <h3 className="text-lg font-black">Want to Review Your Diagnostic Test with an Instructor?</h3>
+                <p className="text-xs text-blue-100 mt-1 max-w-md leading-relaxed">
+                  Book a 1-on-1 strategy call to break down careless errors, refine test pacing, and map a timeline to your target score.
                 </p>
               </div>
 
@@ -797,27 +876,27 @@ export default function ReportPage() {
                   href={org_settings.whatsapp_url}
                   target="_blank"
                   rel="noreferrer"
-                  className="bg-white text-blue-900 hover:bg-blue-50 font-bold text-xs px-5 py-2.5 rounded-xl transition shrink-0 shadow-xs"
+                  className="bg-white text-blue-900 hover:bg-blue-50 font-black text-xs px-5 py-3 rounded-xl transition shrink-0 shadow-xs"
                 >
-                  💬 Inquire via WhatsApp
+                  💬 Schedule Strategy Session
                 </a>
               ) : (
                 <button
                   onClick={() => window.print()}
-                  className="bg-white text-blue-900 hover:bg-blue-50 font-bold text-xs px-5 py-2.5 rounded-xl transition shrink-0 shadow-xs"
+                  className="bg-white text-blue-900 hover:bg-blue-50 font-black text-xs px-5 py-3 rounded-xl transition shrink-0 shadow-xs"
                 >
-                  🖨️ Download PDF Report
+                  🖨️ Download Printable PDF
                 </button>
               )}
             </div>
           </div>
         )}
 
-        {/* Report Footer */}
+        {/* Footer */}
         <footer className="text-center text-xs text-slate-400 pt-6 border-t border-slate-200">
-          <p>{org_settings?.marketing_tagline || 'Diagnostic & Evaluation Platform'}</p>
+          <p>{org_settings?.marketing_tagline || 'Academic Evaluation & Diagnostic Platform'}</p>
           <p className="mt-1">
-            Attempt ID: <span className="font-mono">{student_info.attempt_id}</span>
+            Verification ID: <span className="font-mono">{student_info.attempt_id}</span>
           </p>
         </footer>
       </main>
