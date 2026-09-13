@@ -47,7 +47,7 @@ export default function QuestionBankPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedDifficulty, setSelectedDifficulty] = useState('')
-  const [selectedAnswerType, setSelectedAnswerType] = useState('')
+  const [selectedAnswerType] = useState('')
 
   const [showImportModal, setShowImportModal] = useState(false)
   const [convertingSetId, setConvertingSetId] = useState<string | null>(null)
