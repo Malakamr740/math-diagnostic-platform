@@ -71,9 +71,27 @@ export default function ImportQuestionsModal({
     }
 
     try {
-      const data = JSON.parse(text)
-      if (!Array.isArray(data)) {
-        setParseError('The JSON root must be an array: [ { ... }, { ... } ]')
+      let data = JSON.parse(text)
+
+      // If a full assessment blueprint with modules was pasted, unwrap the questions automatically
+      if (!Array.isArray(data) && typeof data === 'object' && data !== null) {
+        if (data.assessment?.name && !newSetTitle) {
+          setNewSetTitle(data.assessment.name)
+        }
+        if (data.assessment?.exam) {
+          setDefaultExam(data.assessment.exam)
+        }
+
+        if (Array.isArray(data.modules)) {
+          // Flatten questions across all modules
+          data = data.modules.flatMap((m: any) => Array.isArray(m.questions) ? m.questions : [])
+        } else if (Array.isArray(data.questions)) {
+          data = data.questions
+        }
+      }
+
+      if (!Array.isArray(data) || data.length === 0) {
+        setParseError('Could not find a list of questions. Ensure the JSON is an array [ { ... } ] or contains a "questions" array.')
         setParsedItems([])
         return
       }
