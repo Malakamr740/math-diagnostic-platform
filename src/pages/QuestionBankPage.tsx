@@ -46,14 +46,13 @@ export default function QuestionBankPage() {
   const [selectedSetFilter, setSelectedSetFilter] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
- const [selectedDifficulty, setSelectedDifficulty] = useState('')
-const [selectedAnswerType, setSelectedAnswerType] = useState('')
+  const [selectedDifficulty, setSelectedDifficulty] = useState('')
   const [showImportModal, setShowImportModal] = useState(false)
   const [convertingSetId, setConvertingSetId] = useState<string | null>(null)
   const [questionToDelete, setQuestionToDelete] = useState<QuestionRow | null>(null)
   const [deleting, setDeleting] = useState(false)
 
-  // Text extraction helper defined as a memoized callback to maintain hook hierarchy
+  // Text extraction helper defined as a memoized callback
   const extractText = useCallback((blocks: ContentBlock[] = []): string => {
     return blocks
       .map((b) => (b.type === 'text' ? b.value : b.type === 'math' ? b.latex : ''))
@@ -61,13 +60,12 @@ const [selectedAnswerType, setSelectedAnswerType] = useState('')
       .toLowerCase()
   }, [])
 
-  // Hook declared at the top level before data fetching side effects and UI conditions
+  // Hook declared at top level with cleaned dependencies
   const filteredQuestions = useMemo(() => {
     return questions.filter((q) => {
       if (selectedSetFilter && q.question_set_id !== selectedSetFilter) return false
       if (selectedCategory && q.category?.id !== selectedCategory) return false
       if (selectedDifficulty && q.difficulty !== selectedDifficulty) return false
-      if (selectedAnswerType && q.answer_type?.code !== selectedAnswerType) return false
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase()
         const match =
@@ -77,9 +75,8 @@ const [selectedAnswerType, setSelectedAnswerType] = useState('')
       }
       return true
     })
-  }, [questions, selectedSetFilter, selectedCategory, selectedDifficulty, selectedAnswerType, searchQuery, extractText])
-
-  useEffect(() => {
+}, [questions, selectedSetFilter, selectedCategory, selectedDifficulty, searchQuery, extractText])
+useEffect(() => {
     fetchData()
   }, [])
 
@@ -202,7 +199,7 @@ const [selectedAnswerType, setSelectedAnswerType] = useState('')
           )}
         </div>
 
-        {/* Loading Spinner Indicator */}
+        {/* Loading Indicator */}
         {loading && (
           <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500 text-xs font-medium">
             Loading question bank data...
@@ -382,12 +379,14 @@ const [selectedAnswerType, setSelectedAnswerType] = useState('')
         )}
       </div>
 
-      {/* Bulk JSON Import Modal */}
-      <ImportQuestionsModal
-        isOpen={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        onImportComplete={fetchData}
-      />
+      {/* Bulk JSON Import Modal (only mounted when active) */}
+      {showImportModal && (
+        <ImportQuestionsModal
+          isOpen={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          onImportComplete={fetchData}
+        />
+      )}
 
       {/* Delete Question Modal */}
       {questionToDelete && (
