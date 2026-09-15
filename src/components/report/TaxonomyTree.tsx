@@ -1,6 +1,6 @@
-import type { BreakdownRow, TaxonomyType } from './Types';
+import type { BreakdownRow, TaxonomyType } from './Types'
 
-const TYPE_ORDER: TaxonomyType[] = ['module', 'category', 'chapter', 'lesson', 'skill', 'difficulty'];
+const TYPE_ORDER: TaxonomyType[] = ['module', 'category', 'chapter', 'lesson', 'skill', 'difficulty']
 const TYPE_LABELS: Record<TaxonomyType, string> = {
   module: 'Modules',
   category: 'Categories',
@@ -8,21 +8,21 @@ const TYPE_LABELS: Record<TaxonomyType, string> = {
   lesson: 'Lessons',
   skill: 'Skills',
   difficulty: 'Difficulty',
-};
+}
 
 interface Props {
-  breakdowns: BreakdownRow[];
-  onSelect?: (type: TaxonomyType, label: string) => void;
-  activeFilter?: { type: TaxonomyType; label: string } | null;
+  breakdowns: BreakdownRow[]
+  onSelect?: (type: TaxonomyType, label: string) => void
+  activeFilter?: { type: TaxonomyType; label: string } | null
 }
 
 export default function TaxonomyTree({ breakdowns, onSelect, activeFilter }: Props) {
   const grouped = TYPE_ORDER.map((type) => ({
     type,
     rows: breakdowns.filter((b) => b.type === type),
-  })).filter((g) => g.rows.length > 0);
+  })).filter((g) => g.rows.length > 0)
 
-  if (grouped.length === 0) return null;
+  if (grouped.length === 0) return null
 
   return (
     <div className="space-y-4">
@@ -31,7 +31,7 @@ export default function TaxonomyTree({ breakdowns, onSelect, activeFilter }: Pro
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{TYPE_LABELS[type]}</h3>
           <div className="mt-3 space-y-2">
             {rows.map((row) => {
-              const isActive = activeFilter?.type === type && activeFilter.label === row.label;
+              const isActive = activeFilter?.type === type && activeFilter.label === row.label
               return (
                 <button
                   key={`${type}-${row.id ?? row.label}`}
@@ -51,11 +51,11 @@ export default function TaxonomyTree({ breakdowns, onSelect, activeFilter }: Pro
                     {row.correct_count}/{row.total_questions} correct
                   </div>
                 </button>
-              );
+              )
             })}
           </div>
         </div>
       ))}
     </div>
-  );
+  )
 }
