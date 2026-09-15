@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './contexts/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
+
 import LoginPage from './pages/LoginPage'
 import AdminDashboardPage from './pages/AdminDashboardPage'
 import QuestionBankPage from './pages/QuestionBankPage'
@@ -24,15 +25,15 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public Student Flow */}
+          {/* Public student flow */}
           <Route path="/assessment/:assessmentId" element={<StudentAssessmentPage />} />
-          <Route path="/take/:attemptId" element={<TakeAssessmentPage />} />
+          <Route path="/take/:assessmentId" element={<TakeAssessmentPage />} />
           <Route path="/report/:attemptId" element={<ReportPage />} />
 
-          {/* Teacher / Admin Authentication */}
+          {/* Auth */}
           <Route path="/login" element={<LoginPage />} />
 
-          {/* Protected Teacher / Admin Studio */}
+          {/* Protected admin studio */}
           <Route
             path="/admin"
             element={
@@ -50,14 +51,6 @@ export default function App() {
             }
           />
           <Route
-            path="/admin/assessments/new"
-            element={
-              <ProtectedRoute>
-                <CreateAssessmentPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/admin/assessments/:assessmentId"
             element={
               <ProtectedRoute>
@@ -66,7 +59,7 @@ export default function App() {
             }
           />
           <Route
-            path="/admin/assessments/:assessmentId/modules/:moduleId"
+            path="/admin/assessments/:assessmentId/module-questions"
             element={
               <ProtectedRoute>
                 <ModuleQuestionsPage />
@@ -74,7 +67,7 @@ export default function App() {
             }
           />
           <Route
-            path="/admin/assessments/:assessmentId/results"
+            path="/admin/assessments/:assessmentId/results/:attemptId"
             element={
               <ProtectedRoute>
                 <AssessmentResultsPage />
@@ -138,9 +131,8 @@ export default function App() {
             }
           />
 
-          {/* Root redirect */}
           <Route path="/" element={<Navigate to="/admin" replace />} />
-          <Route path="*" element={<Navigate to="/admin" replace />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>
