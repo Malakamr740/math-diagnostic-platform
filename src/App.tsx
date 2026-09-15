@@ -25,111 +25,25 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public student flow */}
           <Route path="/assessment/:assessmentId" element={<StudentAssessmentPage />} />
           <Route path="/take/:assessmentId" element={<TakeAssessmentPage />} />
           <Route path="/report/:attemptId" element={<ReportPage />} />
 
-          {/* Auth */}
           <Route path="/login" element={<LoginPage />} />
 
-          {/* Protected admin studio */}
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute>
-                <AdminDashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/assessments"
-            element={
-              <ProtectedRoute>
-                <AssessmentsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/assessments/:assessmentId"
-            element={
-              <ProtectedRoute>
-                <AssessmentDetailPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/assessments/:assessmentId/module-questions"
-            element={
-              <ProtectedRoute>
-                <ModuleQuestionsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/assessments/:assessmentId/results/:attemptId"
-            element={
-              <ProtectedRoute>
-                <AssessmentResultsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/attempts/:attemptId"
-            element={
-              <ProtectedRoute>
-                <AdminAttemptDetailPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/questions"
-            element={
-              <ProtectedRoute>
-                <QuestionBankPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/questions/new"
-            element={
-              <ProtectedRoute>
-                <CreateQuestionPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/questions/:questionId/edit"
-            element={
-              <ProtectedRoute>
-                <EditQuestionPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/taxonomy"
-            element={
-              <ProtectedRoute>
-                <TaxonomyPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/levels"
-            element={
-              <ProtectedRoute>
-                <LevelsCoursesPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/admin/settings"
-            element={
-              <ProtectedRoute>
-                <OrganizationSettingsPage />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/admin" element={<ProtectedRoute><AdminDashboardPage /></ProtectedRoute>} />
+          <Route path="/admin/assessments" element={<ProtectedRoute><AssessmentsPage /></ProtectedRoute>} />
+          <Route path="/admin/assessments/new" element={<ProtectedRoute><CreateAssessmentPage /></ProtectedRoute>} />
+          <Route path="/admin/assessments/:assessmentId" element={<ProtectedRoute><AssessmentDetailPage /></ProtectedRoute>} />
+          <Route path="/admin/assessments/:assessmentId/module-questions" element={<ProtectedRoute><ModuleQuestionsPage /></ProtectedRoute>} />
+          <Route path="/admin/assessments/:assessmentId/results/:attemptId" element={<ProtectedRoute><AssessmentResultsPage /></ProtectedRoute>} />
+          <Route path="/admin/attempts/:attemptId" element={<ProtectedRoute><AdminAttemptDetailPage /></ProtectedRoute>} />
+          <Route path="/admin/questions" element={<ProtectedRoute><QuestionBankPage /></ProtectedRoute>} />
+          <Route path="/admin/questions/new" element={<ProtectedRoute><CreateQuestionPage /></ProtectedRoute>} />
+          <Route path="/admin/questions/:questionId/edit" element={<ProtectedRoute><EditQuestionPage /></ProtectedRoute>} />
+          <Route path="/admin/taxonomy" element={<ProtectedRoute><TaxonomyPage /></ProtectedRoute>} />
+          <Route path="/admin/levels" element={<ProtectedRoute><LevelsCoursesPage /></ProtectedRoute>} />
+          <Route path="/admin/settings" element={<ProtectedRoute><OrganizationSettingsPage /></ProtectedRoute>} />
 
           <Route path="/" element={<Navigate to="/admin" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
