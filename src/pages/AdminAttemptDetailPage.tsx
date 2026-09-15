@@ -4,15 +4,12 @@ import AdminLayout from '../components/AdminLayout';
 import TaxonomyTree from '../components/report/TaxonomyTree';
 import QuestionReviewCard from '../components/report/QuestionReviewCard';
 import { supabase } from '../lib/supabaseClient';
-import type { ReportData, TaxonomyType } from '../components/report/types';
-
+import type { ReportData, TaxonomyType } from '../components/report/Types';
 
 function formatTime(s: number) {
   const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
 }
-
 
 export default function AdminAttemptDetailPage() {
   const { attemptId } = useParams();
@@ -76,9 +73,7 @@ export default function AdminAttemptDetailPage() {
     questionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  if (loading) {
-    return <div className="grid min-h-screen place-items-center text-slate-600">Loading student diagnostic report…</div>;
-  }
+  if (loading) return <div className="grid min-h-screen place-items-center text-slate-600">Loading student diagnostic report…</div>;
 
   if (errorMessage || !report || !derived) {
     return (
@@ -138,16 +133,8 @@ export default function AdminAttemptDetailPage() {
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <SectionTitle title="Strengths & gaps" />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <ListBlock 
-              title="Strengths" 
-              items={strongSkills.map((s) => `${s.label} · ${s.percentage}%`)} 
-              tone="border-emerald-200 bg-emerald-50 text-emerald-800" 
-            />
-            <ListBlock 
-              title="Gaps to address" 
-              items={weakSkills.map((s) => `${s.label} · ${s.percentage}%`)} 
-              tone="border-amber-200 bg-amber-50 text-amber-800" 
-            />
+            <ListBlock title="Strengths" items={strongSkills.map((s) => `${s.label} · ${s.percentage}%`)} tone="border-emerald-200 bg-emerald-50 text-emerald-800" />
+            <ListBlock title="Gaps to address" items={weakSkills.map((s) => `${s.label} · ${s.percentage}%`)} tone="border-amber-200 bg-amber-50 text-amber-800" />
           </div>
         </section>
 
@@ -204,7 +191,6 @@ export default function AdminAttemptDetailPage() {
   );
 }
 
-// Helper components
 function InsightCard({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

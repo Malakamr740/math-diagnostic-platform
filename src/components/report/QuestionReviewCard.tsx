@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import ContentBlockRenderer, { type ContentBlock } from '../ContentBlockRenderer';
-import type { ChoiceOption, QuestionReviewItem } from './types';
+import type { ChoiceOption, QuestionReviewItem } from './Types';
 
 function formatTime(s: number) {
   const m = Math.floor(s / 60);
@@ -24,9 +24,8 @@ function ChoiceText({ id, choices }: { id: string; choices: ChoiceOption[] }) {
 }
 
 function formatAnswer(ans: Record<string, unknown>, choices: ChoiceOption[]): ReactNode {
-  if (!ans || Object.keys(ans).length === 0) {
+  if (!ans || Object.keys(ans).length === 0)
     return <span className="italic text-slate-400">No answer recorded</span>;
-  }
 
   const raw = ans.choice_ids ?? ans.choice_id ?? ans.selected_choice_ids;
   if (raw !== undefined) {
@@ -50,7 +49,7 @@ function formatAnswer(ans: Record<string, unknown>, choices: ChoiceOption[]): Re
 function formatCorrect(q: QuestionReviewItem): ReactNode {
   if (q.choices?.length) {
     const correct = q.choices.filter((c) => c.is_correct);
-    if (correct.length) {
+    if (correct.length)
       return (
         <div className="space-y-1">
           {correct.map((c) => (
@@ -60,16 +59,14 @@ function formatCorrect(q: QuestionReviewItem): ReactNode {
           ))}
         </div>
       );
-    }
   }
-  if (q.correct_answer_data?.value !== undefined) {
+  if (q.correct_answer_data?.value !== undefined)
     return (
       <>
         {String(q.correct_answer_data.value)}
         {q.correct_answer_data.tolerance ? ` ±${q.correct_answer_data.tolerance}` : ''}
       </>
     );
-  }
   return <span className="italic text-slate-400">Not available</span>;
 }
 
@@ -122,10 +119,7 @@ export default function QuestionReviewCard({ question, index, avgTime, highlight
             {avgTime ? <span>Avg: {formatTime(avgTime)}</span> : null}
           </div>
           <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-            <div 
-              className={`h-full rounded-full ${paceTone}`} 
-              style={{ width: `${Math.min(timeRatio * 50, 100)}%` }} 
-            />
+            <div className={`h-full rounded-full ${paceTone}`} style={{ width: `${Math.min(timeRatio * 50, 100)}%` }} />
           </div>
         </div>
 
@@ -146,7 +140,7 @@ export default function QuestionReviewCard({ question, index, avgTime, highlight
           </div>
         </div>
 
-        {question.explanation_blocks && question.explanation_blocks.length > 0 && (
+        {question.explanation_blocks?.length > 0 && (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="text-xs font-semibold text-slate-500">Explanation</div>
             <div className="mt-1 max-w-none">

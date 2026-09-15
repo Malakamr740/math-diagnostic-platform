@@ -8,7 +8,7 @@ export interface StudentInfo {
   started_at: string;
   completed_at: string | null;
   total_time_seconds: number;
-  registration_responses: Record<string, any>;
+  registration_responses: Record<string, unknown>;
 }
 
 export interface LevelInfo {
@@ -63,12 +63,12 @@ export interface QuestionReviewItem {
   points_earned: number;
   is_correct: boolean;
   time_spent_seconds: number;
-  student_answer: Record<string, any>;
+  student_answer: Record<string, unknown>;
   category_name: string | null;
   lesson_name: string | null;
   skill_name: string | null;
   choices: ChoiceOption[];
-  correct_answer_data?: { value: any; tolerance?: number };
+  correct_answer_data?: { value: unknown; tolerance?: number };
 }
 
 export interface CourseItem {

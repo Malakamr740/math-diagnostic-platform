@@ -1,161 +1,61 @@
-@import "tailwindcss";
+import type { BreakdownRow, TaxonomyType } from './Types';
 
-@theme {
-  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+const TYPE_ORDER: TaxonomyType[] = ['module', 'category', 'chapter', 'lesson', 'skill', 'difficulty'];
+const TYPE_LABELS: Record<TaxonomyType, string> = {
+  module: 'Modules',
+  category: 'Categories',
+  chapter: 'Chapters',
+  lesson: 'Lessons',
+  skill: 'Skills',
+  difficulty: 'Difficulty',
+};
 
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
-
-  --color-neutral-50: #f8fafc;
-  --color-neutral-100: #f1f5f9;
-  --color-neutral-200: #e2e8f0;
-  --color-neutral-300: #cbd5e1;
-  --color-neutral-400: #94a3b8;
-  --color-neutral-500: #64748b;
-  --color-neutral-600: #475569;
-  --color-neutral-700: #334155;
-  --color-neutral-800: #1e293b;
-  --color-neutral-900: #0f172a;
-
-  --color-success-50: #ecfdf5;
-  --color-success-100: #d1fae5;
-  --color-success-600: #059669;
-  --color-success-700: #047857;
-
-  --color-warning-50: #fffbeb;
-  --color-warning-100: #fef3c7;
-  --color-warning-600: #d97706;
-  --color-warning-700: #b45309;
-
-  --color-danger-50: #fef2f2;
-  --color-danger-100: #fee2e2;
-  --color-danger-600: #dc2626;
-  --color-danger-700: #b91c1c;
-
-  --radius-card: 1rem;
-  --radius-panel: 1.25rem;
-  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.06), 0 8px 24px rgb(15 23 42 / 0.08);
-  --shadow-floating: 0 10px 30px rgb(15 23 42 / 0.12);
+interface Props {
+  breakdowns: BreakdownRow[];
+  onSelect?: (type: TaxonomyType, label: string) => void;
+  activeFilter?: { type: TaxonomyType; label: string } | null;
 }
 
-:root {
-  font-family: var(--font-sans);
-  line-height: 1.5;
-  font-weight: 400;
-  color: theme(colors.neutral.800);
-  background: theme(colors.neutral.50);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+export default function TaxonomyTree({ breakdowns, onSelect, activeFilter }: Props) {
+  const grouped = TYPE_ORDER.map((type) => ({
+    type,
+    rows: breakdowns.filter((b) => b.type === type),
+  })).filter((g) => g.rows.length > 0);
 
-html {
-  scroll-behavior: smooth;
-}
+  if (grouped.length === 0) return null;
 
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-  background: linear-gradient(180deg, theme(colors.neutral.50), #ffffff 30%, theme(colors.neutral.50));
-  color: theme(colors.neutral.800);
-}
-
-* {
-  box-sizing: border-box;
-}
-
-#root {
-  min-height: 100vh;
-}
-
-h1,
-h2,
-h3,
-h4 {
-  color: theme(colors.neutral.900);
-  letter-spacing: -0.02em;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-::selection {
-  background: theme(colors.primary.100);
-  color: theme(colors.primary.900);
-}
-
-.focus-ring,
-button:focus-visible,
-a:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px theme(colors.primary.100), 0 0 0 5px rgb(37 99 235 / 0.25);
-}
-
-/* KaTeX protection */
-.katex {
-  font-size: 1.12em !important;
-  text-rendering: auto;
-  line-height: 1.2 !important;
-  white-space: normal;
-}
-.katex .katex-html {
-  white-space: normal;
-}
-.katex .frac-line {
-  border-bottom-width: 0.05em !important;
-  border-bottom-style: solid !important;
-  border-color: currentColor !important;
-}
-.katex .sqrt > .root {
-  position: relative !important;
-  margin-right: -0.55em !important;
-}
-.katex .vlist-t {
-  display: inline-table !important;
-  table-layout: fixed !important;
-}
-.katex .mord,
-.katex .mbin,
-.katex .mrel {
-  line-height: normal !important;
-}
-
-@media print {
-  body {
-    background: #fff !important;
-  }
-  .no-print {
-    display: none !important;
-  }
-  .print-page {
-    background: #fff !important;
-    box-shadow: none !important;
-    border: 0 !important;
-  }
-  a[href]:after {
-    content: "";
-  }
+  return (
+    <div className="space-y-4">
+      {grouped.map(({ type, rows }) => (
+        <div key={type} className="rounded-2xl border border-slate-200 bg-white p-5">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">{TYPE_LABELS[type]}</h3>
+          <div className="mt-3 space-y-2">
+            {rows.map((row) => {
+              const isActive = activeFilter?.type === type && activeFilter.label === row.label;
+              return (
+                <button
+                  key={`${type}-${row.id ?? row.label}`}
+                  onClick={() => onSelect?.(type, row.label)}
+                  className={`w-full rounded-xl border p-3 text-left transition ${
+                    isActive ? 'border-primary-400 bg-primary-50' : 'border-slate-200 hover:border-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-sm font-medium text-slate-900">{row.label}</span>
+                    <span className="text-xs font-semibold text-slate-600">{row.percentage}%</span>
+                  </div>
+                  <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div className="h-full rounded-full bg-primary-500" style={{ width: `${row.percentage}%` }} />
+                  </div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {row.correct_count}/{row.total_questions} correct
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
