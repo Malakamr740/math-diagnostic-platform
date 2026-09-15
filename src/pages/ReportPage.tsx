@@ -1,58 +1,60 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { supabase } from '../lib/supabaseClient'
-import TaxonomyTree from '../components/report/TaxonomyTree'
-import QuestionReviewCard from '../components/report/QuestionReviewCard'
-import type { ReportData, TaxonomyType } from '../components/report/types'
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { supabase } from '../lib/supabaseClient';
+import TaxonomyTree from '../components/report/TaxonomyTree';
+import QuestionReviewCard from '../components/report/QuestionReviewCard';
+import type { ReportData, TaxonomyType } from '../components/report/types';
 
 function formatTime(s: number) {
-  const m = Math.floor(s / 60)
-  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
 
+
 export default function ReportPage() {
-  const { attemptId } = useParams()
-  const [searchParams] = useSearchParams()
-  const resumeToken = searchParams.get('token')
-  const [report, setReport] = useState<ReportData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [filter, setFilter] = useState<{ type: TaxonomyType; label: string } | null>(null)
-  const questionsRef = useRef<HTMLDivElement>(null)
+  const { attemptId } = useParams();
+  const [searchParams] = useSearchParams();
+  const resumeToken = searchParams.get('token');
+  const [report, setReport] = useState<ReportData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [filter, setFilter] = useState<{ type: TaxonomyType; label: string } | null>(null);
+  const questionsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function load() {
       if (!attemptId || !resumeToken) {
-        setErrorMessage('This diagnostic link is missing required authentication tokens.')
-        setLoading(false)
-        return
+        setErrorMessage('This diagnostic link is missing required authentication tokens.');
+        setLoading(false);
+        return;
       }
       const { data, error } = await supabase.rpc('get_attempt_report', {
         p_attempt_id: attemptId,
         p_resume_token: resumeToken,
-      })
+      });
       if (error || !data) {
         setErrorMessage(
           error?.message?.includes('not yet available')
             ? 'Your diagnostic assessment results are currently compiling. Please refresh.'
             : 'Diagnostic report not found or expired.'
-        )
-        setLoading(false)
-        return
+        );
+        setLoading(false);
+        return;
       }
-      setReport(data as ReportData)
-      setLoading(false)
+      setReport(data as ReportData);
+      setLoading(false);
     }
-    load()
-  }, [attemptId, resumeToken])
+    load();
+  }, [attemptId, resumeToken]);
 
   const derived = useMemo(() => {
-    if (!report) return null
-    const { student_info, overall, breakdowns } = report
+    if (!report) return null;
+    const { student_info, overall, breakdowns } = report;
     const studentName =
       (student_info.registration_responses.full_name as string) ||
       (student_info.registration_responses.name as string) ||
-      'Candidate'
+      'Candidate';
     return {
       studentName,
       completedLabel: student_info.completed_at
@@ -63,30 +65,31 @@ export default function ReportPage() {
       conceptual: Math.max(0, overall.incorrect_count - overall.rushed_mistakes_count - overall.timesink_mistakes_count),
       strongSkills: breakdowns.filter((b) => b.type === 'skill' && b.classification === 'strong'),
       weakSkills: breakdowns.filter((b) => b.type === 'skill' && b.classification === 'weak'),
-    }
-  }, [report])
+    };
+  }, [report]);
 
   const visibleQuestions = useMemo(() => {
-    if (!report) return []
-    if (!filter) return report.questions
+    if (!report) return [];
+    if (!filter) return report.questions;
     return report.questions.filter((q) => {
       switch (filter.type) {
-        case 'category': return q.category_name === filter.label
-        case 'lesson': return q.lesson_name === filter.label
-        case 'skill': return q.skill_name === filter.label
-        case 'difficulty': return q.difficulty === filter.label.toLowerCase()
-        default: return true
+        case 'category': return q.category_name === filter.label;
+        case 'lesson': return q.lesson_name === filter.label;
+        case 'skill': return q.skill_name === filter.label;
+        case 'difficulty': return q.difficulty === filter.label.toLowerCase();
+        default: return true;
       }
-    })
-  }, [report, filter])
+    });
+  }, [report, filter]);
 
   function handleSelectTaxonomy(type: TaxonomyType, label: string) {
-    setFilter((prev) => (prev && prev.type === type && prev.label === label ? null : { type, label }))
-    questionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setFilter((prev) => (prev && prev.type === type && prev.label === label ? null : { type, label }));
+    questionsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  if (loading)
-    return <div className="grid min-h-screen place-items-center text-slate-600">Generating diagnostic report…</div>
+  if (loading) {
+    return <div className="grid min-h-screen place-items-center text-slate-600">Generating diagnostic report…</div>;
+  }
 
   if (errorMessage || !report || !derived) {
     return (
@@ -99,11 +102,11 @@ export default function ReportPage() {
           </Link>
         </div>
       </div>
-    )
+    );
   }
 
-  const { student_info, overall, breakdowns, questions, courses, org_settings } = report
-  const { studentName, completedLabel, durationLabel, avgTime, conceptual, strongSkills, weakSkills } = derived
+  const { student_info, overall, breakdowns, questions, courses, org_settings } = report;
+  const { studentName, completedLabel, durationLabel, avgTime, conceptual, strongSkills, weakSkills } = derived;
 
   return (
     <div className="print-page min-h-screen bg-slate-50">
@@ -164,8 +167,16 @@ export default function ReportPage() {
         <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <SectionTitle title="Strengths & gaps" />
           <div className="mt-4 grid gap-4 md:grid-cols-2">
-            <ListBlock title="Strengths" items={strongSkills.map((s) => `${s.label} · ${s.percentage}%`)} tone="border-emerald-200 bg-emerald-50 text-emerald-800" />
-            <ListBlock title="Gaps to address" items={weakSkills.map((s) => `${s.label} · ${s.percentage}%`)} tone="border-amber-200 bg-amber-50 text-amber-800" />
+            <ListBlock 
+              title="Strengths" 
+              items={strongSkills.map((s) => `${s.label} · ${s.percentage}%`)} 
+              tone="border-emerald-200 bg-emerald-50 text-emerald-800" 
+            />
+            <ListBlock 
+              title="Gaps to address" 
+              items={weakSkills.map((s) => `${s.label} · ${s.percentage}%`)} 
+              tone="border-amber-200 bg-amber-50 text-amber-800" 
+            />
           </div>
         </section>
 
@@ -219,16 +230,17 @@ export default function ReportPage() {
         </section>
       </main>
     </div>
-  )
+  );
 }
 
+// Helper components
 function HeroMetric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl bg-white/10 p-3">
       <div className="text-xs font-medium uppercase tracking-wide text-white/70">{label}</div>
       <div className="mt-1 text-lg font-semibold">{value}</div>
     </div>
-  )
+  );
 }
 
 function InsightCard({ label, value }: { label: string; value: string }) {
@@ -237,7 +249,7 @@ function InsightCard({ label, value }: { label: string; value: string }) {
       <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
       <div className="mt-1 text-lg font-semibold text-slate-900">{value}</div>
     </div>
-  )
+  );
 }
 
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) {
@@ -246,7 +258,7 @@ function SectionTitle({ title, subtitle }: { title: string; subtitle?: string })
       <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
       {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
     </div>
-  )
+  );
 }
 
 function ErrorChip({ label, count, tone }: { label: string; count: number; tone: string }) {
@@ -254,7 +266,7 @@ function ErrorChip({ label, count, tone }: { label: string; count: number; tone:
     <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-semibold ${tone}`}>
       {label}: {count}
     </span>
-  )
+  );
 }
 
 function ListBlock({ title, items, tone }: { title: string; items: string[]; tone: string }) {
@@ -265,5 +277,5 @@ function ListBlock({ title, items, tone }: { title: string; items: string[]; ton
         {items.length ? items.map((item) => <li key={item}>{item}</li>) : <li>None identified</li>}
       </ul>
     </div>
-  )
+  );
 }

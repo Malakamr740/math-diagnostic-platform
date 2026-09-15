@@ -1,12 +1,12 @@
-import { useState } from 'react'
-import type { ReactNode } from 'react'
-import ContentBlockRenderer, { type ContentBlock } from '../ContentBlockRenderer'
-import type { ChoiceOption, QuestionReviewItem } from './Types'
+import { useState } from 'react';
+import type { ReactNode } from 'react';
+import ContentBlockRenderer, { type ContentBlock } from '../ContentBlockRenderer';
+import type { ChoiceOption, QuestionReviewItem } from './types';
 
 function formatTime(s: number) {
-  const m = Math.floor(s / 60)
-  const sec = s % 60
-  return m > 0 ? `${m}m ${sec}s` : `${sec}s`
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
 
 function Tag({ label, value }: { label: string; value: string }) {
@@ -14,22 +14,23 @@ function Tag({ label, value }: { label: string; value: string }) {
     <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">
       <span className="font-semibold text-slate-500">{label}:</span> {value}
     </span>
-  )
+  );
 }
 
 function ChoiceText({ id, choices }: { id: string; choices: ChoiceOption[] }) {
-  const c = choices.find((ch) => ch.id === id)
-  if (!c) return <>{id}</>
-  return <ContentBlockRenderer blocks={c.content_blocks} />
+  const c = choices.find((ch) => ch.id === id);
+  if (!c) return <>{id}</>;
+  return <ContentBlockRenderer blocks={c.content_blocks} />;
 }
 
 function formatAnswer(ans: Record<string, unknown>, choices: ChoiceOption[]): ReactNode {
-  if (!ans || Object.keys(ans).length === 0)
-    return <span className="italic text-slate-400">No answer recorded</span>
+  if (!ans || Object.keys(ans).length === 0) {
+    return <span className="italic text-slate-400">No answer recorded</span>;
+  }
 
-  const raw = ans.choice_ids ?? ans.choice_id ?? ans.selected_choice_ids
+  const raw = ans.choice_ids ?? ans.choice_id ?? ans.selected_choice_ids;
   if (raw !== undefined) {
-    const ids = Array.isArray(raw) ? raw : [raw]
+    const ids = Array.isArray(raw) ? raw : [raw];
     return (
       <div className="space-y-1">
         {ids.map((id: string, i: number) => (
@@ -38,18 +39,18 @@ function formatAnswer(ans: Record<string, unknown>, choices: ChoiceOption[]): Re
           </div>
         ))}
       </div>
-    )
+    );
   }
-  if (ans.value !== undefined) return <>{String(ans.value)}</>
-  if (ans.text !== undefined) return <>{String(ans.text)}</>
-  if (ans.numerical !== undefined) return <>{String(ans.numerical)}</>
-  return <>{JSON.stringify(ans)}</>
+  if (ans.value !== undefined) return <>{String(ans.value)}</>;
+  if (ans.text !== undefined) return <>{String(ans.text)}</>;
+  if (ans.numerical !== undefined) return <>{String(ans.numerical)}</>;
+  return <>{JSON.stringify(ans)}</>;
 }
 
 function formatCorrect(q: QuestionReviewItem): ReactNode {
   if (q.choices?.length) {
-    const correct = q.choices.filter((c) => c.is_correct)
-    if (correct.length)
+    const correct = q.choices.filter((c) => c.is_correct);
+    if (correct.length) {
       return (
         <div className="space-y-1">
           {correct.map((c) => (
@@ -58,30 +59,32 @@ function formatCorrect(q: QuestionReviewItem): ReactNode {
             </div>
           ))}
         </div>
-      )
+      );
+    }
   }
-  if (q.correct_answer_data?.value !== undefined)
+  if (q.correct_answer_data?.value !== undefined) {
     return (
       <>
         {String(q.correct_answer_data.value)}
         {q.correct_answer_data.tolerance ? ` ±${q.correct_answer_data.tolerance}` : ''}
       </>
-    )
-  return <span className="italic text-slate-400">Not available</span>
+    );
+  }
+  return <span className="italic text-slate-400">Not available</span>;
 }
 
 interface Props {
-  question: QuestionReviewItem
-  index: number
-  avgTime?: number
-  highlight?: boolean
+  question: QuestionReviewItem;
+  index: number;
+  avgTime?: number;
+  highlight?: boolean;
 }
 
 export default function QuestionReviewCard({ question, index, avgTime, highlight }: Props) {
-  const [open, setOpen] = useState(false)
-  const timeRatio = avgTime && avgTime > 0 ? Math.min(question.time_spent_seconds / avgTime, 2) : 0
+  const [open, setOpen] = useState(false);
+  const timeRatio = avgTime && avgTime > 0 ? Math.min(question.time_spent_seconds / avgTime, 2) : 0;
   const paceTone =
-    timeRatio > 1.3 ? 'bg-amber-500' : timeRatio < 0.6 ? 'bg-sky-500' : 'bg-slate-400'
+    timeRatio > 1.3 ? 'bg-amber-500' : timeRatio < 0.6 ? 'bg-sky-500' : 'bg-slate-400';
 
   return (
     <div
@@ -119,7 +122,10 @@ export default function QuestionReviewCard({ question, index, avgTime, highlight
             {avgTime ? <span>Avg: {formatTime(avgTime)}</span> : null}
           </div>
           <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
-            <div className={`h-full rounded-full ${paceTone}`} style={{ width: `${Math.min(timeRatio * 50, 100)}%` }} />
+            <div 
+              className={`h-full rounded-full ${paceTone}`} 
+              style={{ width: `${Math.min(timeRatio * 50, 100)}%` }} 
+            />
           </div>
         </div>
 
@@ -140,7 +146,7 @@ export default function QuestionReviewCard({ question, index, avgTime, highlight
           </div>
         </div>
 
-        {question.explanation_blocks?.length > 0 && (
+        {question.explanation_blocks && question.explanation_blocks.length > 0 && (
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
             <div className="text-xs font-semibold text-slate-500">Explanation</div>
             <div className="mt-1 max-w-none">
@@ -150,5 +156,5 @@ export default function QuestionReviewCard({ question, index, avgTime, highlight
         )}
       </div>
     </div>
-  )
+  );
 }
